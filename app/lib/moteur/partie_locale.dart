@@ -76,7 +76,7 @@ class PartieLocale extends ChangeNotifier {
   int indexCourant = 0;
   int defiPoseur = -1; // -1 = pas de défi en cours
   int defiChancesRestantes = 0;
-  PhasePartie phase = PhasePartie.partieFinie;
+  PhasePartie phase = PhasePartie.attenteHumain;
 
   /// Dernier événement "ramassage" : index du vainqueur + nb cartes.
   int? dernierVainqueurPli;
