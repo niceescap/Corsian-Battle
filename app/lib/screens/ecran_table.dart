@@ -190,9 +190,7 @@ class _EcranTableState extends State<EcranTable>
       ..showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 2),
-          content: Text(
-            '${_partie.joueurs[indexVainqueur].nom} ramasse $nombreCartes carte(s).',
-          ),
+          content: Text(_messageRamasse(indexVainqueur, nombreCartes)),
         ),
       );
   }
