@@ -66,7 +66,7 @@ class PartieLocale extends ChangeNotifier {
   Timer? _timerCourseTap;
   Timer? _timerBot;
   int _coups = 0;
-  static const int _maxCoups = 40_000;
+  static const int _maxCoups = 40000;
 
   /// Vide avant [nouvellePartie] : l'UI doit tester `.isEmpty`.
   List<JoueurPartie> joueurs = [];
