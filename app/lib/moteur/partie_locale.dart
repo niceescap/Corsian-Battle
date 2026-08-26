@@ -148,6 +148,9 @@ class PartieLocale extends ChangeNotifier {
   // ------------------------------------------------------------------ //
   bool get defiActif => defiPoseur >= 0;
 
+  /// Vraie fin de partie (indépendante des phases de transition).
+  bool get estFinie => vainqueurFinal != null || _coups >= _maxCoups;
+
   bool get auTourDeLHumain =>
       phase == PhasePartie.attenteHumain &&
       joueurs.isNotEmpty &&
