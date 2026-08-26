@@ -77,7 +77,8 @@ class PartieLocale extends ChangeNotifier {
   /// la dépose (reveal), jamais d'un instant invisible côté table.
   static const int _fenetreEquiteMs = 650;
 
-  late final List<JoueurPartie> joueurs;
+  /// Vide avant [nouvellePartie] : l'UI doit tester `.isEmpty`.
+  List<JoueurPartie> joueurs = [];
   final List<_CartePli> pli = [];
   final List<String> _resteNeutre = [];
 
