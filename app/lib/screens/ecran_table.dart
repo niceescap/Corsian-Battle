@@ -332,8 +332,17 @@ class _EcranTableState extends State<EcranTable>
           child: TasJoueur(
             nombreCartes: _partie.humain.nombreCartes,
             onCarteJouee: (vitesse) {
+              if (!_partie.humainPose()) {
+                // Refus limpide plutôt qu'un geste avalé sans réponse.
+                ScaffoldMessenger.of(context)
+                  ..clearSnackBars()
+                  ..showSnackBar(const SnackBar(
+                    duration: Duration(milliseconds: 700),
+                    content: Text('Pas ton tour !'),
+                  ));
+                return;
+              }
               _derniereVitesseHumain = vitesse;
-              _partie.humainPose();
             },
           ),
         ),
