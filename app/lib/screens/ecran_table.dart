@@ -82,7 +82,7 @@ class _EcranTableState extends State<EcranTable>
   void _surNotifMoteur() {
     if (!mounted) return;
     setState(() {});
-    if (_partie.phase == PhasePartie.partieFinie && !_dialogAffiche) {
+    if (_partie.estFinie && !_dialogAffiche) {
       _dialogAffiche = true;
       final gagnant = _partie.vainqueurFinal;
       showDialog<void>(
