@@ -255,6 +255,14 @@ class _EcranTableState extends State<EcranTable>
   }
 
   Widget _table(Size taille) {
+    if (_partie.joueurs.isEmpty) {
+      return const Center(
+        child: Text(
+          'Distribution des cartes…',
+          style: TextStyle(color: Colors.white70),
+        ),
+      );
+    }
     final adversaires = <JoueurUI>[
       for (var i = 1; i < _partie.joueurs.length; i++)
         JoueurUI(
