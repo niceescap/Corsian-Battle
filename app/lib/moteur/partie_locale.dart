@@ -68,7 +68,8 @@ class PartieLocale extends ChangeNotifier {
   int _coups = 0;
   static const int _maxCoups = 40_000;
 
-  late final List<JoueurPartie> joueurs;
+  /// Vide avant [nouvellePartie] : l'UI doit tester `.isEmpty`.
+  List<JoueurPartie> joueurs = [];
   final List<_CartePli> pli = [];
   final List<String> _resteNeutre = [];
 
