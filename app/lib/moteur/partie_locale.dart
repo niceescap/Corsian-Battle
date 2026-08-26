@@ -9,7 +9,9 @@ import 'package:flutter/foundation.dart';
 /// - un joueur pose TOUJOURS sa carte du dessus ;
 /// - figure => défi : le(s) suivant(s) ont As=4, Roi=3, Dame=2, Valet=1
 ///   cartes-chances ; une figure ressortie fait rebondir le défi sans
-///   limite ;
+///   limite (nouveau propriétaire, barème PLEIN non cumulatif) ;
+/// - si aucun joueur n'a plus assez de cartes pour finir les chances,
+///   le défi échoue au profit du dernier poseur de figure ;
 /// - le DOUBLON (deux rangs identiques consécutifs) est prioritaire à
 ///   tout instant : première personne à TAPER qui gagne le pli, même un
 ///   joueur à sec ;
@@ -68,8 +70,14 @@ class PartieLocale extends ChangeNotifier {
   int _coups = 0;
   static const int _maxCoups = 40000;
 
-  /// Vide avant [nouvellePartie] : l'UI doit tester `.isEmpty`.
-  List<JoueurPartie> joueurs = [];
+  /// Équité de la course de tap : même si un bot "réagit" vite, son
+  /// verdict n'est prononcé qu'à partir de cette fenêtre minimale, pour
+  /// laisser LA CARTE atterrir visuellement avant de clore le doublon.
+  /// Cohérent avec resolveur_tape.py : le chronomètre part du début de
+  /// la dépose (reveal), jamais d'un instant invisible côté table.
+  static const int _fenetreEquiteMs = 650;
+
+  late final List<JoueurPartie> joueurs;
   final List<_CartePli> pli = [];
   final List<String> _resteNeutre = [];
 
@@ -81,6 +89,14 @@ class PartieLocale extends ChangeNotifier {
   /// Dernier événement "ramassage" : index du vainqueur + nb cartes.
   int? dernierVainqueurPli;
   int nbCartesDernierPli = 0;
+
+  /// Règle qui a déclenché le dernier ramassage ('Pli', 'Doublon',
+  /// 'Défi manqué') — pour un retour UI explicite.
+  String derniereRaisonPli = 'Pli';
+
+  /// Vrai si le vainqueur du dernier pli était À SEC juste avant :
+  /// il "revient en jeu" via le tap sur le doublon.
+  bool dernierPliRepriseEnJeu = false;
 
   /// Hook UI : appelé dès qu'une carte quitte un tas (pour le vol).
   void Function(int indexJoueur, String code, bool venantDHumain)? surPose;
@@ -180,6 +196,7 @@ class PartieLocale extends ChangeNotifier {
   bool humainTape() {
     if (phase != PhasePartie.courseTap) return false;
     _timerCourseTap?.cancel();
+    derniereRaisonPli = 'Doublon';
     _attribuerPli(0);
     return true;
   }
@@ -187,6 +204,7 @@ class PartieLocale extends ChangeNotifier {
   void _poserCarte(int idx) {
     if (phase == PhasePartie.partieFinie) return;
 
+    derniereRaisonPli = 'Pli';
     final j = joueurs[idx];
     final code = j.tas.removeFirst();
     pli.add(_CartePli(code, idx));
@@ -197,11 +215,12 @@ class PartieLocale extends ChangeNotifier {
 
     // 1) Doublon : priorité absolue, fenêtre de tap immédiate.
     if (_estDoublon()) {
+      derniereRaisonPli = 'Doublon';
       _ouvrirCourseTap();
       return;
     }
 
-    // 2) Figure : (re)lance ou fait rebondir le défi.
+    // 2) Figure : (re)lance ou fait rebondir le défi (barème PLEIN).
     if (carte.estFigure) {
       defiPoseur = idx;
       defiChancesRestantes = carte.chances;
@@ -210,6 +229,7 @@ class PartieLocale extends ChangeNotifier {
       // 3) Carte normale pendant un défi : consomme une chance.
       defiChancesRestantes--;
       if (defiChancesRestantes <= 0) {
+        derniereRaisonPli = 'Défi manqué';
         _attribuerPli(defiPoseur);
         return;
       }
@@ -227,7 +247,10 @@ class PartieLocale extends ChangeNotifier {
   void _avancerOuCloturer(int dernierPoseur) {
     final suivant = _prochainIndexAvecCartes(dernierPoseur);
     if (suivant == null) {
-      if (defiActif) _attribuerPli(defiPoseur);
+      if (defiActif) {
+        derniereRaisonPli = 'Défi manqué';
+        _attribuerPli(defiPoseur);
+      }
       return;
     }
     indexCourant = suivant;
@@ -252,12 +275,16 @@ class PartieLocale extends ChangeNotifier {
       if (e.value < meilleur.value) meilleur = e;
     }
 
-    _timerCourseTap = Timer(
-      Duration(milliseconds: meilleur.value.round()),
-      () {
-        if (phase == PhasePartie.courseTap) _attribuerPli(meilleur.key);
-      },
-    );
+    // Fenêtre d'équité : on ne clôt jamais la course avant que la carte
+    // déposable ait pu être VUE à l'écran (voir _fenetreEquiteMs).
+    final delai =
+        max(meilleur.value.round(), _fenetreEquiteMs);
+
+    _timerCourseTap = Timer(Duration(milliseconds: delai), () {
+      if (phase == PhasePartie.courseTap) {
+        _attribuerPli(meilleur.key);
+      }
+    });
   }
 
   double _gaussienne() {
@@ -273,6 +300,7 @@ class PartieLocale extends ChangeNotifier {
 
   void _attribuerPli(int gagnant) {
     nbCartesDernierPli = pli.length + _resteNeutre.length;
+    final gagnantEtaitASec = !joueurs[gagnant].aDesCartes;
     for (final c in pli) {
       joueurs[gagnant].tas.addLast(c.code);
     }
@@ -282,6 +310,7 @@ class PartieLocale extends ChangeNotifier {
     defiPoseur = -1;
     defiChancesRestantes = 0;
     dernierVainqueurPli = gagnant;
+    dernierPliRepriseEnJeu = gagnantEtaitASec && nbCartesDernierPli > 0;
     indexCourant = gagnant;
 
     final fini =
