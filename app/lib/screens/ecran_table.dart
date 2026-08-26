@@ -140,6 +140,21 @@ class _EcranTableState extends State<EcranTable>
       taille.height * 0.42 + (_rng.nextDouble() - 0.5) * 40,
     );
     final depart = _origineJoueur(indexJoueur, taille);
+  String _messageRamasse(int vainqueur, int nb) {
+    final nom = _partie.joueurs[vainqueur].nom;
+    String base;
+    switch (_partie.derniereRaisonPli) {
+      case 'Doublon':
+        base = '$nom a tapé sur le doublon : $nb carte(s) !';
+      case 'Défi manqué':
+        base = 'Défi manqué : $nom remporte $nb carte(s).';
+    }
+    if (_partie.dernierPliRepriseEnJeu && vainqueur == 0) {
+      return '$base\n💥 Tu reviens en jeu !';
+    }
+    return base;
+  }
+
     final rotationFinale = (_rng.nextDouble() - 0.5) * 0.6;
 
     late final Widget volante;
