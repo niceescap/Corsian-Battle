@@ -1,19 +1,18 @@
 import 'dart:math';
+
 import 'package:flutter/material.dart';
+
 import '../modeles.dart';
+import '../moteur/partie_locale.dart';
+import '../widgets/carte_volante.dart';
+import '../widgets/carte_widget.dart';
 import '../widgets/entete.dart';
 import '../widgets/fleche_joueur.dart';
-import '../widgets/carte_widget.dart';
-import '../widgets/carte_volante.dart';
 import '../widgets/tas_joueur.dart';
 
-/// Écran de la table de jeu.
-///
-/// IMPORTANT : cet écran simule localement les adversaires et l'issue
-/// des plis (aucune connexion au moteur Python ni synchronisation
-/// réseau). C'est une ébauche visuelle pour valider les animations et
-/// les gestes ; le branchement au vrai moteur + au timecode réseau
-/// reste à faire (voir README du projet).
+/// Écran de la table animé par [PartieLocale] : tu joues contre 3 bots
+/// dont les temps de réaction suivent une loi log-normale crédible.
+/// Règles complètes câblées (défis, doublon prioritaire, victoire 52).
 class EcranTable extends StatefulWidget {
   const EcranTable({super.key});
 
@@ -21,63 +20,130 @@ class EcranTable extends StatefulWidget {
   State<EcranTable> createState() => _EcranTableState();
 }
 
-class _CarteAuCentre {
+class _CarteCentre {
   final String code;
   final Offset position;
   final double rotation;
-
-  _CarteAuCentre({
+  _CarteCentre({
     required this.code,
     required this.position,
     required this.rotation,
   });
 }
 
-class _EcranTableState extends State<EcranTable> {
+class _LotRamasse {
+  final List<_CarteCentre> cartes;
+  final Offset arrivee;
+  _LotRamasse({required this.cartes, required this.arrivee});
+}
+
+class _EcranTableState extends State<EcranTable>
+    with SingleTickerProviderStateMixin {
   final _rng = Random();
+  late final PartieLocale _partie;
 
-  late List<String> _cartesRestantes = _nouveauPaquet();
+  final List<_CarteCentre> _pliVisible = [];
+  final List<Widget> _volantes = [];
 
-  int _nombreCartesJoueur = 13;
-  final List<_CarteAuCentre> _pli = [];
-  final List<Widget> _cartesVolantes = [];
-  bool _pliRamassable = false;
-  double _progressionRamassage = 0;
+  double _derniereVitesseHumain = 1200;
+  bool _feuDoublon = false;
 
-  final List<JoueurUI> _adversaires = const [
-    JoueurUI(id: 'p1', pseudo: 'Marc', nombreCartes: 14),
-    JoueurUI(id: 'p2', pseudo: 'Julie', nombreCartes: 3),
-    JoueurUI(id: 'p3', pseudo: 'Théo', nombreCartes: 0),
-  ];
+  late final AnimationController _ctrlRamasse;
+  _LotRamasse? _ramassage;
 
-  List<String> _nouveauPaquet() => [
-        for (final couleur in ['S', 'H', 'D', 'C'])
-          for (final rang in [
-            'A', '2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K'
-          ])
-            '$rang$couleur',
-      ]..shuffle(_rng);
+  @override
+  void initState() {
+    super.initState();
 
-  String _prochaineCarte() {
-    if (_cartesRestantes.isEmpty) _cartesRestantes = _nouveauPaquet();
-    return _cartesRestantes.removeLast();
+    _ctrlRamasse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    )..addListener(() => setState(() {}));
+
+    _partie = PartieLocale();
+    _partie.surPose = _onCartePosee;
+    _partie.surPliRamasse = _onPliRamasse;
+    _partie.surDoublon = () => setState(() => _feuDoublon = true);
+    _partie.addListener(_surNotifMoteur);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _partie.nouvellePartie();
+    });
   }
 
-  void _joueurLanceCarte(double vitesse, Size tailleTable) {
-    if (_nombreCartesJoueur <= 0) return;
+  @override
+  void dispose() {
+    _partie.removeListener(_surNotifMoteur);
+    _partie.dispose();
+    _ctrlRamasse.dispose();
+    super.dispose();
+  }
 
-    final centre = Offset(tailleTable.width / 2, tailleTable.height * 0.40);
-    final decalage = Offset(
-      (_rng.nextDouble() - 0.5) * 70,
-      (_rng.nextDouble() - 0.5) * 40,
+  void _surNotifMoteur() {
+    if (!mounted) return;
+    setState(() {});
+    if (_partie.phase == PhasePartie.partieFinie && !_dialogAffiche) {
+      _dialogAffiche = true;
+      final gagnant = _partie.vainqueurFinal;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          backgroundColor: const Color(0xFF0F5C3E),
+          title: Text(
+            gagnant == null
+                ? 'Match interrompu'
+                : gagnant.estBot
+                    ? '${gagnant.nom} remporte la partie !'
+                    : 'Tu gagnes la partie ! 🎉',
+            style: const TextStyle(color: Colors.white),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _reinitialiser();
+              },
+              child: const Text('Rejouer'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  bool _dialogAffiche = false;
+
+  void _reinitialiser() {
+    setState(() {
+      _dialogAffiche = false;
+      _pliVisible.clear();
+      _volantes.clear();
+      _feuDoublon = false;
+      _ramassage = null;
+      _ctrlRamasse.reset();
+    });
+    _partie.nouvellePartie();
+  }
+
+  // ------------------------------------------------------------------ //
+  // Réactions aux événements du moteur                                 //
+  // ------------------------------------------------------------------ //
+  void _onCartePosee(int indexJoueur, String code, bool venantDHumain) {
+    final taille = _tailleEcran();
+    if (taille == Size.zero) return;
+
+    final vitesse =
+        venantDHumain ? _derniereVitesseHumain : 900 + _rng.nextDouble() * 1400;
+    final arrivee = Offset(
+      taille.width / 2 + (_rng.nextDouble() - 0.5) * 70,
+      taille.height * 0.42 + (_rng.nextDouble() - 0.5) * 40,
     );
-    final arrivee = centre + decalage;
-    final depart = Offset(tailleTable.width / 2 - 32, tailleTable.height - 34);
+    final depart = _origineJoueur(indexJoueur, taille);
     final rotationFinale = (_rng.nextDouble() - 0.5) * 0.6;
-    final code = _prochaineCarte();
 
-    late final Widget carte;
-    carte = CarteVolante(
+    late final Widget volante;
+    volante = CarteVolante(
       key: UniqueKey(),
       depart: depart,
       arrivee: arrivee,
@@ -86,88 +152,193 @@ class _EcranTableState extends State<EcranTable> {
       rotationFinale: rotationFinale,
       onAtterrissage: () {
         setState(() {
-          _cartesVolantes.remove(carte);
-          _pli.add(_CarteAuCentre(
-            code: code,
-            position: arrivee,
-            rotation: rotationFinale,
-          ));
-          _nombreCartesJoueur--;
-          // Condition simplifiée pour la démo : à remplacer par le vrai
-          // signal "pli remporté" envoyé par le moteur.
-          _pliRamassable = _pli.length >= 4;
+          _volantes.remove(volante);
+          _pliVisible.add(
+            _CarteCentre(
+              code: code,
+              position: arrivee,
+              rotation: rotationFinale,
+            ),
+          );
         });
       },
     );
-
-    setState(() => _cartesVolantes.add(carte));
+    setState(() => _volantes.add(volante));
   }
 
-  void _ramasserProgression(double delta) {
-    setState(() {
-      _progressionRamassage = (_progressionRamassage + delta).clamp(0, 1);
-    });
-  }
-
-  void _terminerRamassage() {
-    if (_progressionRamassage > 0.6) {
-      setState(() {
-        _pli.clear();
-        _pliRamassable = false;
-        _progressionRamassage = 0;
-        _nombreCartesJoueur += 4; // valeur de démo
-      });
-    } else {
-      setState(() => _progressionRamassage = 0);
+  void _onPliRamasse(int indexVainqueur, int nombreCartes) {
+    final taille = _tailleEcran();
+    if (taille == Size.zero || _pliVisible.isEmpty) {
+      setState(() => _feuDoublon = false);
+      return;
     }
+
+    setState(() {
+      _ramassage = _LotRamasse(
+        cartes: List<_CarteCentre>.of(_pliVisible),
+        arrivee: _origineJoueur(indexVainqueur, taille),
+      );
+      _feuDoublon = false;
+      _pliVisible.clear();
+    });
+    _ctrlRamasse.forward(from: 0).whenComplete(() {
+      if (mounted) setState(() => _ramassage = null);
+    });
+
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 2),
+          content: Text(
+            '${_partie.joueurs[indexVainqueur].nom} ramasse $nombreCartes carte(s).',
+          ),
+        ),
+      );
   }
 
+  Size _tailleEcran() {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return Size.zero;
+    return box.size;
+  }
+
+  Offset _origineJoueur(int indexJoueur, Size taille) {
+    if (indexJoueur == 0) {
+      return Offset(taille.width / 2 - 32, taille.height - 34);
+    }
+    final nAdversaires = _partie.joueurs.length - 1;
+    final rang = indexJoueur - 1;
+    final angleDeg =
+        nAdversaires == 1 ? 0.0 : -90 + (rang / (nAdversaires - 1)) * 180;
+    final angleRad = angleDeg * pi / 180;
+    final rayon = taille.width * 0.36;
+    final hautTapis = taille.height * 0.16;
+    return Offset(
+      taille.width / 2 + rayon * sin(angleRad) - 24,
+      hautTapis + 10 - 10 * cos(angleRad),
+    );
+  }
+
+  // ------------------------------------------------------------------ //
+  // Build                                                              //
+  // ------------------------------------------------------------------ //
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0B3D2E),
       body: SafeArea(
-        child: Column(
-          children: [
-            const Entete(),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, contraintes) {
-                  final taille =
-                      Size(contraintes.maxWidth, contraintes.maxHeight);
-                  return Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      _construireTapis(taille),
-                      ..._positionnerAdversaires(taille),
-                      ..._positionnerPli(taille),
-                      ..._cartesVolantes,
-                      Align(
-                        alignment: Alignment.bottomCenter,
-                        child: TasJoueur(
-                          nombreCartes: _nombreCartesJoueur,
-                          onCarteJouee: (vitesse) =>
-                              _joueurLanceCarte(vitesse, taille),
-                        ),
-                      ),
-                      if (_pliRamassable) _construireZoneRamassage(taille),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
+        child: LayoutBuilder(
+          builder: (context, contraintes) {
+            final taille = Size(contraintes.maxWidth, contraintes.maxHeight);
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Column(
+                  children: [
+                    const Entete(),
+                    Expanded(child: _table(taille)),
+                  ],
+                ),
+
+                // Zone de tap sur doublon : plein écran pendant la course.
+                if (_feuDoublon) _zoneTape(),
+
+                // Bandeau d'état / consignes.
+                Positioned(left: 12, bottom: 160, child: IgnorePointer(child: _bandeau())),
+              ],
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _construireTapis(Size taille) {
+  Widget _table(Size taille) {
+    final adversaires = <JoueurUI>[
+      for (var i = 1; i < _partie.joueurs.length; i++)
+        JoueurUI(
+          id: 'p$i',
+          pseudo: _partie.joueurs[i].nom,
+          nombreCartes: _partie.joueurs[i].nombreCartes,
+        ),
+    ];
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _tapis(taille),
+
+        // Adversaires en arc 9h -> 3h avec compte de cartes vivant.
+        for (var i = 0; i < adversaires.length; i++)
+          Builder(builder: (_) {
+            final angleDeg = adversaires.length == 1
+                ? 0.0
+                : -90 + (i / (adversaires.length - 1)) * 180;
+            final angleRad = angleDeg * pi / 180;
+            final x = taille.width / 2 + taille.width * 0.36 * sin(angleRad);
+            final y = taille.height * 0.16 + 10 - 10 * cos(angleRad);
+            return Positioned(
+              left: x - 24,
+              top: y,
+              child: FlecheJoueur(joueur: adversaires[i], angleRad: angleRad),
+            );
+          }),
+
+        // Pli visible au centre.
+        for (final c in _pliVisible)
+          Positioned(
+            left: c.position.dx - 32,
+            top: c.position.dy - 45,
+            child: Transform.rotate(
+              angle: c.rotation,
+              child: CarteWidget(code: c.code, largeur: 64, hauteur: 90),
+            ),
+          ),
+
+        // Vol terminée vers le vainqueur du pli.
+        if (_ramassage != null)
+          for (final c in _ramassage!.cartes)
+            Builder(builder: (_) {
+              final t = Curves.easeIn.transform(_ctrlRamasse.value);
+              final p = Offset.lerp(c.position, _ramassage!.arrivee, t)!;
+              return Positioned(
+                left: p.dx - 32,
+                top: p.dy - 45,
+                child: Opacity(
+                  opacity: 1 - 0.7 * t,
+                  child: Transform.rotate(
+                    angle: c.rotation * (1 - t),
+                    child: CarteWidget(code: c.code, largeur: 64, hauteur: 90),
+                  ),
+                ),
+              );
+            }),
+
+        // Cartes en vol.
+        ..._volantes,
+
+        // Tas du joueur (toujours dos visible jusqu'au lancer).
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: TasJoueur(
+            nombreCartes: _partie.humain.nombreCartes,
+            onCarteJouee: (vitesse) {
+              _derniereVitesseHumain = vitesse;
+              _partie.humainPose();
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _tapis(Size taille) {
     return Positioned(
       left: taille.width * 0.1,
       right: taille.width * 0.1,
-      top: taille.height * 0.16,
-      height: taille.height * 0.5,
+      top: taille.height * 0.14,
+      height: taille.height * 0.55,
       child: Container(
         decoration: BoxDecoration(
           color: const Color(0xFF0F5C3E),
@@ -178,58 +349,70 @@ class _EcranTableState extends State<EcranTable> {
     );
   }
 
-  List<Widget> _positionnerAdversaires(Size taille) {
-    final n = _adversaires.length;
-    final rayon = taille.width * 0.36;
-    final centreX = taille.width / 2;
-    final hautTapis = taille.height * 0.16;
-
-    return List.generate(n, (i) {
-      // Répartis de 9h à 3h en passant par midi (arc supérieur).
-      final angleDeg = n == 1 ? 0.0 : -90 + (i / (n - 1)) * 180;
-      final angleRad = angleDeg * pi / 180;
-      final x = centreX + rayon * sin(angleRad);
-      final y = hautTapis + 10 - 10 * cos(angleRad);
-
-      return Positioned(
-        left: x - 24,
-        top: y,
-        child: FlecheJoueur(joueur: _adversaires[i], angleRad: angleRad),
-      );
-    });
-  }
-
-  List<Widget> _positionnerPli(Size taille) {
-    final posTas = Offset(taille.width / 2 - 32, taille.height - 34);
-    return _pli.map((carte) {
-      final position =
-          Offset.lerp(carte.position, posTas, _progressionRamassage)!;
-      return Positioned(
-        left: position.dx - 32,
-        top: position.dy - 45,
-        child: Transform.rotate(
-          angle: carte.rotation * (1 - _progressionRamassage),
-          child: CarteWidget(code: carte.code, largeur: 64, hauteur: 90),
-        ),
-      );
-    }).toList();
-  }
-
-  Widget _construireZoneRamassage(Size taille) {
-    return Positioned(
-      left: taille.width * 0.1,
-      top: taille.height * 0.16,
-      width: taille.width * 0.8,
-      height: taille.height * 0.5,
+  Widget _zoneTape() {
+    return Positioned.fill(
       child: GestureDetector(
-        onPanUpdate: (details) => _ramasserProgression(details.delta.dy / 200),
-        onPanEnd: (_) => _terminerRamassage(),
+        behavior: HitTestBehavior.opaque,
+        onTap: _partie.humainTape,
         child: Container(
-          decoration: BoxDecoration(
-            color: Colors.amber.withOpacity(0.06 + _progressionRamassage * 0.2),
-            borderRadius: BorderRadius.circular(28),
+          color: Colors.red.withOpacity(0.14),
+          child: Center(
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.redAccent,
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black54, blurRadius: 16),
+                ],
+              ),
+              child: const Text(
+                'DOUBLON — TAPE !',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                ),
+              ),
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _bandeau() {
+    String texte;
+    switch (_partie.phase) {
+      case PhasePartie.attenteHumain:
+        texte = 'À toi — swipe ta carte !';
+        break;
+      case PhasePartie.reflexionBot:
+        texte = '${_partie.joueurs[_partie.indexCourant].nom} réfléchit…';
+        break;
+      case PhasePartie.courseTap:
+        texte = 'Qui tape le plus vite ?!';
+        break;
+      case PhasePartie.partieFinie:
+        texte = 'Partie terminée.';
+    }
+    if (_partie.defiActif) {
+      texte += '\nDéfi ${_partie.joueurs[_partie.defiPoseur].nom} — '
+          '${_partie.defiChancesRestantes} chance(s)';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black45,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      constraints: const BoxConstraints(maxWidth: 260),
+      child: Text(
+        texte,
+        textAlign: TextAlign.center,
+        style: const TextStyle(color: Colors.white70, fontSize: 13),
       ),
     );
   }
