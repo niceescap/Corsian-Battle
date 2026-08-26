@@ -47,6 +47,7 @@ class _EcranTableState extends State<EcranTable>
 
   double _derniereVitesseHumain = 1200;
   bool _feuDoublon = false;
+  bool _dialogAffiche = false;
 
   late final AnimationController _ctrlRamasse;
   _LotRamasse? _ramassage;
@@ -112,8 +113,6 @@ class _EcranTableState extends State<EcranTable>
     }
   }
 
-  bool _dialogAffiche = false;
-
   void _reinitialiser() {
     setState(() {
       _dialogAffiche = false;
@@ -140,21 +139,6 @@ class _EcranTableState extends State<EcranTable>
       taille.height * 0.42 + (_rng.nextDouble() - 0.5) * 40,
     );
     final depart = _origineJoueur(indexJoueur, taille);
-  String _messageRamasse(int vainqueur, int nb) {
-    final nom = _partie.joueurs[vainqueur].nom;
-    String base;
-    switch (_partie.derniereRaisonPli) {
-      case 'Doublon':
-        base = '$nom a tapé sur le doublon : $nb carte(s) !';
-      case 'Défi manqué':
-        base = 'Défi manqué : $nom remporte $nb carte(s).';
-    }
-    if (_partie.dernierPliRepriseEnJeu && vainqueur == 0) {
-      return '$base\n💥 Tu reviens en jeu !';
-    }
-    return base;
-  }
-
     final rotationFinale = (_rng.nextDouble() - 0.5) * 0.6;
 
     late final Widget volante;
@@ -179,6 +163,23 @@ class _EcranTableState extends State<EcranTable>
       },
     );
     setState(() => _volantes.add(volante));
+  }
+
+  /// Annonce LA règle qui a donné le pli, et signale la reprise-en-jeu.
+  String _messageRamasse(int vainqueur, int nb) {
+    final nom = _partie.joueurs[vainqueur].nom;
+    String base;
+    if (_partie.derniereRaisonPli == 'Doublon') {
+      base = '$nom a tapé sur le doublon : $nb carte(s) !';
+    } else if (_partie.derniereRaisonPli == 'Défi manqué') {
+      base = 'Défi manqué : $nom remporte $nb carte(s).';
+    } else {
+      base = '$nom ramasse $nb carte(s).';
+    }
+    if (_partie.dernierPliRepriseEnJeu && vainqueur == 0) {
+      return '$base\n💥 Tu reviens en jeu !';
+    }
+    return base;
   }
 
   void _onPliRamasse(int indexVainqueur, int nombreCartes) {
@@ -258,7 +259,11 @@ class _EcranTableState extends State<EcranTable>
                 if (_feuDoublon) _zoneTape(),
 
                 // Bandeau d'état / consignes.
-                Positioned(left: 12, bottom: 160, child: IgnorePointer(child: _bandeau())),
+                Positioned(
+                  left: 12,
+                  bottom: 160,
+                  child: IgnorePointer(child: _bandeau()),
+                ),
               ],
             );
           },
