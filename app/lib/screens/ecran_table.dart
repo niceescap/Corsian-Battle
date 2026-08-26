@@ -384,6 +384,7 @@ class _EcranTableState extends State<EcranTable>
   }
 
   Widget _bandeau() {
+    if (_partie.joueurs.isEmpty) return const SizedBox.shrink();
     String texte;
     switch (_partie.phase) {
       case PhasePartie.attenteHumain:
