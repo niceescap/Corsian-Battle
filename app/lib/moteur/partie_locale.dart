@@ -43,8 +43,8 @@ class JoueurPartie {
   /// Index 0 = dessus du tas (prochaine carte jouée).
   final Queue<String> tas = Queue<String>();
 
-  JoueurPartie({
-    required this.nom,
+  JoueurPartie(
+    this.nom, {
     required this.estBot,
     this.reflexeMoyenMs = 250,
   });
