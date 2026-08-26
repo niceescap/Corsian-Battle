@@ -1,0 +1,61 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+          cache: true
+
+      # Le dépôt ne contient pas le scaffolding android/ (upload initial =
+      # lib/ + pubspec + assets). On le régénère ici sans toucher lib/.
+      - name: Génère le scaffold Android
+        working-directory: app
+        run: >
+          flutter create --platforms=android
+          --project-name bataille_corse --org fr.niceescap .
+
+      - name: Dépendances
+        working-directory: app
+        run: flutter pub get
+
+      # Analyse non bloquante pour test1 (les infos de dépréciation type
+      # withOpacity ne doivent pas empêcher l'obtention d'un APK).
+      - name: Analyse statique (non bloquante)
+        working-directory: app
+        run: flutter analyze
+        continue-on-error: true
+
+      - name: Construit l'APK debug (test1)
+        working-directory: app
+        run: flutter build apk --debug
+
+      - name: Prépare l'artefact
+        run: |
+          cp app/build/app/outputs/flutter-apk/app-debug.apk \
+             bataille-corse-test1.apk
+          ls -lh bataille-corse-test1.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-test1
+          path: bataille-corse-test1.apk
+          if-no-files-found: error
