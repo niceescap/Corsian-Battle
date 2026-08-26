@@ -130,6 +130,7 @@ class PartieLocale extends ChangeNotifier {
     defiChancesRestantes = 0;
     dernierVainqueurPli = null;
     indexCourant = 0;
+    phase = PhasePartie.reflexionBot;
 
     notifyListeners();
     _programmerTourSuivant();
