@@ -1,1 +1,72 @@
-juste du txt
+Code des cartes Poker
+
+Format
+
+Chaque carte est représentée par une chaîne de 2 caractères :
+
+· 1er caractère : le rang (valeur)
+· 2e caractère : la couleur (suit)
+
+Exemple : "AS" → As de pique.
+
+---
+
+Rangs autorisés
+
+```
+A, 2, 3, 4, 5, 6, 7, 8, 9, T, J, Q, K
+```
+
+· T = 10 (Ten)
+· J = Valet (Jack)
+· Q = Reine (Queen)
+· K = Roi (King)
+· A = As (Ace)
+
+---
+
+Couleurs autorisées
+
+```
+S, D, H, C
+```
+
+· S = Pique (Spades)
+· D = Carreau (Diamonds)
+· H = Cœur (Hearts)
+· C = Trèfle (Clubs)
+
+---
+
+Ordre des rangs (pour comparaison)
+
+Du plus faible au plus fort :
+
+```
+2 < 3 < 4 < 5 < 6 < 7 < 8 < 9 < T < J < Q < K < A
+```
+
+Remarque : Dans les suites (straight), l’As peut être utilisé comme carte basse (A-2-3-4-5). Dans ce cas, l’ordre est A < 2 < 3 < 4 < 5.
+
+---
+
+Exemples de codes
+
+Carte Code
+2 de trèfle 2C
+10 de carreau TD
+Valet de cœur JH
+Reine de pique QS
+Roi de trèfle KC
+As de pique AS
+
+---
+
+Utilisation prévue
+
+Ce codage est destiné à des évaluations de mains de poker (Texas Hold’em, Omaha, etc.).
+Toute combinaison valide est une chaîne de 2 caractères respectant exactement les ensembles ci-dessus.
+
+---
+
+Remarque : La couleur n’a pas d’ordre de priorité dans la plupart des jeux ; elle sert uniquement à distinguer les cartes de même rang.
