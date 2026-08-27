@@ -1,5 +1,7 @@
 Code des cartes Poker
 
+back.png est le dos, la face cachée commune à toutes les cartes 
+
 Format
 
 Chaque carte est représentée par une chaîne de 2 caractères :
