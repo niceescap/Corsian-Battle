@@ -6,8 +6,8 @@ Règles implémentées :
   gagnées ;
 - un joueur joue toujours obligatoirement sa carte du dessus ;
 - une figure (As/Roi/Dame/Valet) met le pli "en jeu" : le joueur suivant
-  dispose d'un nombre de cartes-chances selon le barème (As 4, Roi 3,
-  Dame 2, Valet 1) pour ressortir une figure ;
+  (et uniquement lui) dispose d'un nombre de cartes-chances selon le
+  barème (As 4, Roi 3, Dame 2, Valet 1) pour ressortir une figure ;
 - si une figure ressort dans ce nombre de cartes, le défi "rebondit" sur
   ce nouveau joueur, et c'est au joueur suivant de tenter sa chance selon
   le nouveau barème — sans limite d'enchaînements, jusqu'à épuisement des
@@ -161,33 +161,26 @@ class BatailleCorse:
         #    déjà un en cours ou non.
         if carte.est_figure:
             self.defi_en_cours = DefiEnCours(joueur, carte.chances)
-            self._avancer_ou_cloturer_si_personne()
-            return
-
-        # 3) Carte normale pendant un défi : elle consomme une chance.
-        if self.defi_en_cours is not None:
-            self.defi_en_cours.chances_restantes -= 1
-            if self.defi_en_cours.chances_restantes <= 0:
+            suivant = self._prochain_index_avec_cartes(self.index_courant)
+            if suivant is None:
                 self._cloturer_defi_echec()
                 return
-            self._avancer_ou_cloturer_si_personne()
+            self.index_courant = suivant
+            return
+
+        # 3) Carte normale pendant un défi : elle consomme une chance du répondeur.
+        if self.defi_en_cours is not None:
+            self.defi_en_cours.chances_restantes -= 1
+            if self.defi_en_cours.chances_restantes <= 0 or not joueur.a_des_cartes():
+                self._cloturer_defi_echec()
+                return
+            # C'est toujours au joueur répondeur de continuer à jouer ses chances restantes
             return
 
         # 4) Jeu normal, pas de défi en cours : le pli continue de tourner.
         suivant = self._prochain_index_avec_cartes(self.index_courant)
         if suivant is not None:
             self.index_courant = suivant
-
-    def _avancer_ou_cloturer_si_personne(self) -> None:
-        """Passe la main au joueur suivant capable de jouer. S'il n'y a
-        plus personne avec des cartes, le défi en cours est clos au
-        profit de son propriétaire (cas limite de fin de partie)."""
-        suivant = self._prochain_index_avec_cartes(self.index_courant)
-        if suivant is None:
-            if self.defi_en_cours is not None:
-                self._cloturer_defi_echec()
-            return
-        self.index_courant = suivant
 
     # ---------------------------------------------------------------- #
     # Boucle complète (pratique pour les tests / simulations)
