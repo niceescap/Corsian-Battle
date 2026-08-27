@@ -51,6 +51,9 @@ class _EcranTableState extends State<EcranTable>
 
   late final AnimationController _ctrlRamasse;
   _LotRamasse? _ramassage;
+  bool _ramassageEnAttente = false;
+  String _messageEnAttente = '';
+  int _vainqueurEnAttente = 0;
 
   @override
   void initState() {
