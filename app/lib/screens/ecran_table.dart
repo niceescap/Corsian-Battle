@@ -256,7 +256,7 @@ class _EcranTableState extends State<EcranTable>
                 ),
 
                 // Zone de tap sur doublon : plein écran pendant la course.
-                if (_feuDoublon) _zoneTape(),
+                if (_feuDoublon) _zoneTape(taille),
 
                 // Bandeau d'état / consignes.
                 Positioned(
