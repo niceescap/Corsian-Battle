@@ -384,32 +384,48 @@ class _EcranTableState extends State<EcranTable>
     );
   }
 
-  Widget _zoneTape() {
-    return Positioned.fill(
+  Widget _zoneTape(Size taille) {
+    // Bande basse uniquement : ne recouvre PAS le centre du tapis —
+    // la lecture du pli reste dégagée pendant toute la course au tap.
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: taille.height * 0.26,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: _partie.humainTape,
         child: Container(
-          color: Colors.red.withOpacity(0.14),
-          child: Center(
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.redAccent,
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: const [
-                  BoxShadow(color: Colors.black54, blurRadius: 16),
-                ],
-              ),
-              child: const Text(
-                'DOUBLON — TAPE !',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 30,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.5,
-                ),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.red.withOpacity(0.0),
+                Colors.red.withOpacity(0.55),
+                Colors.red,
+              ],
+              stops: const [0.0, 0.55, 1.0],
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.redAccent,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: const [
+                BoxShadow(color: Colors.black54, blurRadius: 16),
+              ],
+            ),
+            child: const Text(
+              'DOUBLON — TAPE !',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.5,
               ),
             ),
           ),
