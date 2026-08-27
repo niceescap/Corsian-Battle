@@ -435,8 +435,8 @@ class _EcranTableState extends State<EcranTable>
         texte = 'Partie terminée.';
     }
     if (_partie.defiActif) {
-      texte += '\nDéfi ${_partie.joueurs[_partie.defiPoseur].nom} — '
-          '${_partie.defiChancesRestantes} chance(s)';
+      texte += '\nDéfi : ${_partie.joueurs[_partie.indexCourant].nom} doit '
+          'sortir une figure (${_partie.defiChancesRestantes} restantes)';
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
