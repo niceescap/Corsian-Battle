@@ -123,6 +123,7 @@ class _EcranTableState extends State<EcranTable>
       _volantes.clear();
       _feuDoublon = false;
       _ramassage = null;
+      _ramassageEnAttente = false;
       _ctrlRamasse.reset();
     });
     _partie.nouvellePartie();
