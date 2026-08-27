@@ -164,6 +164,7 @@ class _EcranTableState extends State<EcranTable>
             ),
           );
         });
+        _declencherRamassageEnAttente();
       },
     );
     setState(() => _volantes.add(volante));
