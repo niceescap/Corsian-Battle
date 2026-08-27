@@ -1,17 +1,19 @@
-import 'dart:async';
-import 'dart:collection';
-import 'dart:math';
+import dart:async;
+import dart:collection;
+import dart:math';
 
 import 'package:flutter/foundation.dart';
 
-/// Moteur local : port fidèle des règles de `bataille_corse/moteur.py`.
+/// Moteur local : port fidèle des règles canoniques de la Bataille Corse.
 ///
 /// - un joueur pose TOUJOURS sa carte du dessus ;
-/// - figure => défi : le(s) suivant(s) ont As=4, Roi=3, Dame=2, Valet=1
-///   cartes-chances ; une figure ressortie fait rebondir le défi sans
-///   limite (nouveau propriétaire, barème PLEIN non cumulatif) ;
-/// - si aucun joueur n'a plus assez de cartes pour finir les chances,
-///   le défi échoue au profit du dernier poseur de figure ;
+/// - figure => défi : le joueur suivant (et UNIQUEMENT lui) dispose d'un
+///   nombre de cartes-chances selon le barème (As 4, Roi 3, Dame 2, Valet 1)
+///   pour sortir une figure ;
+/// - si une figure ressort, le défi rebondit sur le joueur suivant avec
+///   son barème PLEIN ;
+/// - si le joueur répondeur n'a plus assez de cartes ou épuise ses chances
+///   sans sortir de figure, le défi échoue au profit du dernier poseur de figure ;
 /// - le DOUBLON (deux rangs identiques consécutifs) est prioritaire à
 ///   tout instant : première personne à TAPER qui gagne le pli, même un
 ///   joueur à sec ;
@@ -221,40 +223,38 @@ class PartieLocale extends ChangeNotifier {
       return;
     }
 
-    // 2) Figure : (re)lance ou fait rebondir le défi (barème PLEIN).
+    // 2) Figure : met le pli en jeu ou fait rebondir le défi (barème PLEIN).
     if (carte.estFigure) {
       defiPoseur = idx;
       defiChancesRestantes = carte.chances;
-      _avancerOuCloturer(idx);
-    } else if (defiActif) {
-      // 3) Carte normale pendant un défi : consomme une chance.
-      defiChancesRestantes--;
-      if (defiChancesRestantes <= 0) {
+      final suivant = _prochainIndexAvecCartes(idx);
+      if (suivant == null) {
+        // Plus aucun autre joueur n'a de cartes
         derniereRaisonPli = 'Défi manqué';
         _attribuerPli(defiPoseur);
         return;
       }
-      _avancerOuCloturer(idx);
+      indexCourant = suivant;
+    } else if (defiActif) {
+      // 3) Carte normale pendant un défi : consomme une chance du répondeur courant.
+      defiChancesRestantes--;
+      if (defiChancesRestantes <= 0 || !joueurs[idx].aDesCartes) {
+        // Toutes les chances sont épuisées ou le répondeur n'a plus de cartes :
+        // le défi échoue au profit du dernier poseur de figure.
+        derniereRaisonPli = 'Défi manqué';
+        _attribuerPli(defiPoseur);
+        return;
+      }
+      // Il reste des chances ET des cartes : le même répondeur DOIT continuer à jouer !
+      indexCourant = idx;
     } else {
-      // 4) Jeu normal : passage au suivant ayant des cartes.
+      // 4) Jeu normal hors défi : passage au suivant ayant des cartes.
       final suivant = _prochainIndexAvecCartes(idx);
       if (suivant != null) indexCourant = suivant;
     }
 
     notifyListeners();
     _programmerTourSuivant();
-  }
-
-  void _avancerOuCloturer(int dernierPoseur) {
-    final suivant = _prochainIndexAvecCartes(dernierPoseur);
-    if (suivant == null) {
-      if (defiActif) {
-        derniereRaisonPli = 'Défi manqué';
-        _attribuerPli(defiPoseur);
-      }
-      return;
-    }
-    indexCourant = suivant;
   }
 
   void _ouvrirCourseTap() {
@@ -269,7 +269,7 @@ class PartieLocale extends ChangeNotifier {
         if (joueurs[i].estBot)
           i: _tirerTempsReaction(joueurs[i].reflexeMoyenMs),
     };
-    if (tempsParBot.isEmpty) return; // impossible en pratique (>=1 bot)
+    if (tempsParBot.isEmpty) return;
 
     var meilleur = tempsParBot.entries.first;
     for (final e in tempsParBot.entries) {
