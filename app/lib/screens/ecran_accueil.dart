@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../moteur/partie_locale.dart';
+import '../widgets/emplacement_pub.dart';
 import 'ecran_table.dart';
 
-/// Page de lancement : première brique de l'écran d'accueil.
+/// Page de lancement.
 ///
-/// À terme (production AAB) cette page devra enchaîner : recherche de
-/// joueurs connectés en attente d'une partie, incrustation dans une partie
-/// en cours, puis fallback vers le moteur local. L'ossature est posée ici
-/// avec une section « En ligne » volontairement désactivée : le jour où le
-/// serveur existe, il suffira de brancher ce bloc.
+/// UX UNIVERSELLE : le titre « CORSIAN BATTLE » est le seul élément de marque
+/// développé. Tout le reste passe par des PICTOGRAMMES (univers des cartes à
+/// jouer) et des termes anglais minimaux. Le choix du mode de table se fait
+/// visuellement : 1 contre 1 (duel) ou la table à 4.
+///
+/// À terme (production AAB) cette page enchaînera : recherche de joueurs
+/// connectés, incrustation dans une partie en cours, puis fallback local.
+/// Le bloc « ONLINE » est réservé et désactivé : le jour où le serveur
+/// existe, il suffira de le brancher.
 class EcranAccueil extends StatefulWidget {
   const EcranAccueil({super.key});
 
@@ -20,8 +25,8 @@ class EcranAccueil extends StatefulWidget {
 class _EcranAccueilState extends State<EcranAccueil> {
   ModePartie _mode = ModePartie.duel;
 
-  final _ctrlNomHumain = TextEditingController(text: 'Toi');
-  final _ctrlNomAdversaire = TextEditingController(text: 'Marc');
+  final _ctrlNomHumain = TextEditingController(text: 'YOU');
+  final _ctrlNomAdversaire = TextEditingController(text: 'MARC');
 
   @override
   void dispose() {
@@ -38,8 +43,8 @@ class _EcranAccueilState extends State<EcranAccueil> {
   void _lancer() {
     final config = ConfigPartie(
       mode: _mode,
-      nomHumain: _nettoyer(_ctrlNomHumain, 'Toi'),
-      nomAdversaire: _nettoyer(_ctrlNomAdversaire, 'Marc'),
+      nomHumain: _nettoyer(_ctrlNomHumain, 'YOU'),
+      nomAdversaire: _nettoyer(_ctrlNomAdversaire, 'MARC'),
     );
 
     Navigator.of(context).push(
@@ -64,35 +69,41 @@ class _EcranAccueilState extends State<EcranAccueil> {
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 28),
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _titre(),
-                    const SizedBox(height: 26),
+                    const SizedBox(height: 24),
                     _carteMode(
                       mode: ModePartie.duel,
                       icone: Icons.bolt,
-                      titre: 'Duel',
-                      sousTitre: '1 contre 1 · l’adversaire épouse ton rythme',
+                      titre: 'DUEL',
+                      badge: '1v1',
                       accent: const Color(0xFFFFD54F),
                     ),
                     const SizedBox(height: 12),
                     _carteMode(
                       mode: ModePartie.tableQuatre,
                       icone: Icons.groups,
-                      titre: 'Table à 4',
-                      sousTitre: 'Marc, Julie et Théo · la table historique',
+                      titre: 'TABLE',
+                      badge: '4',
                       accent: const Color(0xFF80CBC4),
                     ),
                     const SizedBox(height: 22),
                     _champsNoms(),
-                    const SizedBox(height: 24),
-                    _boutonJouer(),
                     const SizedBox(height: 22),
+                    _boutonJouer(),
+                    const SizedBox(height: 20),
                     _blocEnLigne(),
+                    const SizedBox(height: 16),
+                    // Emplacement publicitaire réservé (rectangle moyen).
+                    EmplacementPub(
+                      format: FormatPub.rectangleMoyen,
+                      largeurDisponible: 300,
+                    ),
                   ],
                 ),
               ),
@@ -106,9 +117,9 @@ class _EcranAccueilState extends State<EcranAccueil> {
   Widget _titre() {
     return Column(
       children: [
-        // Motif de trois cartes éventailées, purement décoratif.
+        // Motif de trois cartes éventailées, purement décoratif (logo).
         SizedBox(
-          height: 62,
+          height: 64,
           child: Stack(
             alignment: Alignment.center,
             children: [
@@ -118,8 +129,8 @@ class _EcranAccueilState extends State<EcranAccueil> {
                   child: Transform.translate(
                     offset: Offset((i - 1) * 26.0, 0),
                     child: Container(
-                      width: 40,
-                      height: 56,
+                      width: 42,
+                      height: 58,
                       decoration: BoxDecoration(
                         color: const Color(0xFF7A1F2B),
                         borderRadius: BorderRadius.circular(5),
@@ -140,26 +151,15 @@ class _EcranAccueilState extends State<EcranAccueil> {
           ),
         ),
         const SizedBox(height: 14),
+        // Seul élément de marque développé.
         const Text(
-          'BATAILLE CORSE',
+          'CORSIAN BATTLE',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: Colors.white,
-            fontSize: 30,
+            fontSize: 28,
             fontWeight: FontWeight.w900,
             letterSpacing: 3,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          _mode == ModePartie.duel
-              ? 'Joue vite, il jouera vite.'
-              : 'Le tapis classique, quatre autour de la table.',
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Colors.white60,
-            fontSize: 14,
-            fontStyle: FontStyle.italic,
           ),
         ),
       ],
@@ -170,12 +170,14 @@ class _EcranAccueilState extends State<EcranAccueil> {
     required ModePartie mode,
     required IconData icone,
     required String titre,
-    required String sousTitre,
+    required String badge,
     required Color accent,
   }) {
     final selectionne = _mode == mode;
     return Material(
-      color: selectionne ? Colors.white.withOpacity(0.14) : Colors.white.withOpacity(0.05),
+      color: selectionne
+          ? Colors.white.withOpacity(0.14)
+          : Colors.white.withOpacity(0.05),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -192,42 +194,50 @@ class _EcranAccueilState extends State<EcranAccueil> {
           child: Row(
             children: [
               Container(
-                width: 44,
-                height: 44,
+                width: 46,
+                height: 46,
                 decoration: BoxDecoration(
-                  color: selectionne ? accent.withOpacity(0.22) : Colors.white10,
+                  color: selectionne
+                      ? accent.withOpacity(0.22)
+                      : Colors.white10,
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
                   icone,
                   color: selectionne ? accent : Colors.white60,
-                  size: 22,
+                  size: 24,
                 ),
               ),
               const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      titre,
-                      style: TextStyle(
-                        color: selectionne ? Colors.white : Colors.white70,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      sousTitre,
-                      style: TextStyle(
-                        color: selectionne ? Colors.white70 : Colors.white38,
-                        fontSize: 12.5,
-                      ),
-                    ),
-                  ],
+              Text(
+                titre,
+                style: TextStyle(
+                  color: selectionne ? Colors.white : Colors.white70,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
                 ),
               ),
+              const SizedBox(width: 10),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: selectionne
+                      ? accent.withOpacity(0.25)
+                      : Colors.white10,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  badge,
+                  style: TextStyle(
+                    color: selectionne ? accent : Colors.white54,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const Spacer(),
               Icon(
                 selectionne
                     ? Icons.radio_button_checked
@@ -248,14 +258,12 @@ class _EcranAccueilState extends State<EcranAccueil> {
       children: [
         _champ(
           ctrl: _ctrlNomHumain,
-          etiquette: 'Ton pseudo',
           icone: Icons.person,
         ),
         if (estDuel) ...[
           const SizedBox(height: 10),
           _champ(
             ctrl: _ctrlNomAdversaire,
-            etiquette: 'Nom de l’adversaire-machine',
             icone: Icons.smart_toy,
           ),
         ],
@@ -265,7 +273,6 @@ class _EcranAccueilState extends State<EcranAccueil> {
 
   Widget _champ({
     required TextEditingController ctrl,
-    required String etiquette,
     required IconData icone,
   }) {
     return TextField(
@@ -275,8 +282,6 @@ class _EcranAccueilState extends State<EcranAccueil> {
       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
       decoration: InputDecoration(
         counterText: '',
-        hintText: etiquette,
-        hintStyle: const TextStyle(color: Colors.white38),
         prefixIcon: Icon(icone, color: Colors.white38, size: 20),
         filled: true,
         fillColor: Colors.black.withOpacity(0.22),
@@ -300,16 +305,16 @@ class _EcranAccueilState extends State<EcranAccueil> {
   Widget _boutonJouer() {
     return SizedBox(
       width: double.infinity,
-      height: 54,
+      height: 56,
       child: ElevatedButton.icon(
         onPressed: _lancer,
-        icon: const Icon(Icons.play_arrow_rounded, size: 30),
-        label: Text(
-          _mode == ModePartie.duel ? 'Entrer en duel' : 'Prendre place',
-          style: const TextStyle(
-            fontSize: 18,
+        icon: const Icon(Icons.play_arrow_rounded, size: 32),
+        label: const Text(
+          'PLAY',
+          style: TextStyle(
+            fontSize: 20,
             fontWeight: FontWeight.w900,
-            letterSpacing: 0.6,
+            letterSpacing: 2,
           ),
         ),
         style: ElevatedButton.styleFrom(
@@ -325,24 +330,45 @@ class _EcranAccueilState extends State<EcranAccueil> {
     );
   }
 
-  /// Réservé : recherche de joueurs connectés / incrustation dans une
-  /// partie en cours. Branché le jour où le serveur existe.
+  /// Réservé : recherche de joueurs connectés / incrustation dans une partie
+  /// en cours. Branché le jour où le serveur existe. Picto seul + « SOON ».
   Widget _blocEnLigne() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.18),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.white12),
       ),
-      child: const Row(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.wifi_tethering, color: Colors.white30, size: 18),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Partie en ligne — bientôt.\nRecherche de joueurs, incrustation dans une partie en cours.',
-              style: TextStyle(color: Colors.white38, fontSize: 11.5),
+          const Icon(Icons.wifi_tethering, color: Colors.white30, size: 18),
+          const SizedBox(width: 10),
+          Text(
+            'ONLINE',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.45),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.white10,
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: const Text(
+              'SOON',
+              style: TextStyle(
+                color: Colors.white38,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.6,
+              ),
             ),
           ),
         ],
