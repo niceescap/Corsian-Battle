@@ -761,6 +761,40 @@ class _EcranTableState extends State<EcranTable>
     );
   }
 
+  /// Zone des adversaires selon le mode de table.
+  ///
+  /// Duel : un seul panneau en vis-à-vis, au sommet.
+  /// Table à 4 : l'arc historique 9h -> 3h, inchangé.
+  List<Widget> _zoneAdversaires(Size taille, List<JoueurUI> adversaires) {
+    if (_partie.config.estDuel) {
+      return [
+        Positioned(
+          left: 0,
+          right: 0,
+          top: taille.height * 0.035,
+          child: _panneauAdversaire(taille),
+        ),
+      ];
+    }
+
+    return [
+      for (var i = 0; i < adversaires.length; i++)
+        Builder(builder: (_) {
+          final angleDeg = adversaires.length == 1
+              ? 0.0
+              : -90 + (i / (adversaires.length - 1)) * 180;
+          final angleRad = angleDeg * pi / 180;
+          final x = taille.width / 2 + taille.width * 0.36 * sin(angleRad);
+          final y = taille.height * 0.16 + 10 - 10 * cos(angleRad);
+          return Positioned(
+            left: x - 24,
+            top: y,
+            child: FlecheJoueur(joueur: adversaires[i], angleRad: angleRad),
+          );
+        }),
+    ];
+  }
+
   /// Panneau de l'adversaire-machine en duel : identité, tas, et surtout
   /// l'indicateur d'HARMONIE — le joueur doit voir que sa cadence est suivie.
   Widget _panneauAdversaire(Size taille) {
