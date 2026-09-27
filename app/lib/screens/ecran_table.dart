@@ -973,14 +973,18 @@ class _EcranTableState extends State<EcranTable>
       height: taille.height * 0.55,
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFF0F5C3E),
-          gradient: RadialGradient(
-            center: const Alignment(0, -0.1),
-            radius: 1.1,
+          // NB : avec un `gradient`, la couleur de base serait écrasée par le
+          // shader. Tous les arrêts sont donc OPAQUES : le tapis ne doit
+          // jamais devenir transparent sur sa périphérie.
+          gradient: const RadialGradient(
+            center: Alignment(0, -0.1),
+            radius: 1.15,
             colors: [
-              const Color(0xFF1B8A5C).withOpacity(0.85),
-              const Color(0xFF0F5C3E).withOpacity(0.0),
+              Color(0xFF1A8159), // centre éclairé
+              Color(0xFF0F5C3E), // vert historique du tapis
+              Color(0xFF0A4630), // bord légèrement assombri
             ],
+            stops: [0.0, 0.62, 1.0],
           ),
           borderRadius: BorderRadius.circular(28),
           border: Border.all(color: Colors.white24, width: 2),
