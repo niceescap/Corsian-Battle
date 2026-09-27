@@ -923,7 +923,7 @@ class _EcranTableState extends State<EcranTable>
                   ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0, end: maitrise),
+                      tween: Tween<double>(begin: 0, end: maitrise),
                       duration: const Duration(milliseconds: 400),
                       builder: (context, valeur, _) => LinearProgressIndicator(
                         value: valeur,
