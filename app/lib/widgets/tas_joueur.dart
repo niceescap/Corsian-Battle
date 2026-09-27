@@ -11,18 +11,27 @@ typedef OnCarteJouee = void Function(double vitessePixelsSeconde);
 /// reste TOUJOURS dos visible ici, même pour son propriétaire — la règle
 /// du jeu veut qu'un joueur ne connaisse jamais sa carte avant de la
 /// jouer (elle n'est révélée qu'une fois lancée au centre).
+///
+/// Taille par défaut augmentée de ~10 % (76x108 -> 84x119) pour une
+/// meilleure préhension sur petits écrans, et [fractionSortie] réduite pour
+/// que le paquet soit davantage visible (moins tronqué en bas d'écran).
 class TasJoueur extends StatefulWidget {
   final int nombreCartes;
   final double largeurCarte;
   final double hauteurCarte;
   final OnCarteJouee onCarteJouee;
 
+  /// Part de la hauteur du tas masquée sous le bord bas de l'écran.
+  /// Plus la valeur est faible, plus le paquet est visible / remonté.
+  final double fractionSortie;
+
   const TasJoueur({
     super.key,
     required this.nombreCartes,
     required this.onCarteJouee,
-    this.largeurCarte = 76,
-    this.hauteurCarte = 108,
+    this.largeurCarte = 84,
+    this.hauteurCarte = 119,
+    this.fractionSortie = 0.12,
   });
 
   @override
@@ -52,13 +61,13 @@ class _TasJoueurState extends State<TasJoueur> {
     if (widget.nombreCartes <= 0) {
       return SizedBox(
         width: widget.largeurCarte,
-        height: widget.hauteurCarte * 0.75,
+        height: widget.hauteurCarte * (1 - widget.fractionSortie),
       );
     }
 
-    // 75 % de la hauteur visible : le tas "sort" du bas de l'écran.
+    final sortie = widget.hauteurCarte * widget.fractionSortie;
     return Transform.translate(
-      offset: Offset(0, widget.hauteurCarte * 0.25),
+      offset: Offset(0, sortie),
       child: GestureDetector(
         onPanUpdate: _onPanUpdate,
         onPanEnd: _onPanEnd,
