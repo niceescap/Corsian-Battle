@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'screens/ecran_table.dart';
+import 'screens/ecran_accueil.dart';
 
 void main() {
   runApp(const BatailleCorseApp());
@@ -16,7 +16,10 @@ class BatailleCorseApp extends StatelessWidget {
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF0B3D2E),
       ),
-      home: const EcranTable(),
+      // L'app ouvre désormais sur la page de lancement : c'est elle qui
+      // choisit la configuration de table (duel 1v1 ou table à 4) avant
+      // d'entrer sur le tapis.
+      home: const EcranAccueil(),
     );
   }
 }
