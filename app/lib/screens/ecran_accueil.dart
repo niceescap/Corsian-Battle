@@ -337,7 +337,7 @@ class _EcranAccueilState extends State<EcranAccueil> {
       ),
       child: const Row(
         children: [
-          Icon(Icons.wifi_tethering_off, color: Colors.white30, size: 18),
+          Icon(Icons.wifi_tethering, color: Colors.white30, size: 18),
           SizedBox(width: 10),
           Expanded(
             child: Text(
