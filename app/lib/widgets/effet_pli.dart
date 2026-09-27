@@ -6,19 +6,21 @@ import 'package:flutter/services.dart';
 // ---------------------------------------------------------------------------
 // Effets de table : dynamiser les phases de GAIN et de PERTE d'un pli.
 //
-// Contrainte de conception : la demande centrale du mode duel est la VITESSE.
-// Aucun effet ne doit la trahir. Trois règles s'imposent donc ici :
+// Contrainte de conception : la demande centrale est la VITESSE et une UX
+// UNIVERSELLE — il n'y a RIEN À LIRE pendant la partie. Trois règles :
 //   1. tout est plafonné à 700 ms ;
 //   2. tout est en IgnorePointer — un effet ne doit JAMAIS avaler un geste ;
-//   3. aucun effet ne bloque le tour suivant : le moteur continue de tourner
-//      pendant que l'animation se joue.
+//   3. aucun effet ne bloque le tour suivant : le moteur continue de tourner.
+//
+// Le sens passe exclusivement par la COULEUR (vert = gagné, rouge = perdu),
+// le SIGNE (+ / −), la DIRECTION du mouvement et des PICTOGRAMMES. Aucun mot.
 // ---------------------------------------------------------------------------
 
 /// Plafond commun de durée des effets, en ms.
 const int kDureeMaxEffetMs = 700;
 
-/// Voile couleur plein écran qui s'estompe. Utilisé en vert/or sur un gain,
-/// en rouge sombre sur une perte, en blanc sur un doublon remporté.
+/// Voile couleur plein écran qui s'estompe. Vert/or sur un gain, rouge sombre
+/// sur une perte, blanc sur un doublon remporté.
 class FlashPli extends StatelessWidget {
   final Color couleur;
   final double opaciteDepart;
@@ -47,18 +49,20 @@ class FlashPli extends StatelessWidget {
   }
 }
 
-/// « +12 » qui monte en s'effaçant sur un gain, « -7 » qui tombe sur une
-/// perte. Le sens du mouvement suffit à lire le résultat sans texte.
+/// « +12 » qui monte en s'effaçant sur un gain, « −7 » qui tombe sur une
+/// perte. Le signe, la couleur et le sens du mouvement suffisent à lire le
+/// résultat sans aucun mot. Un [icone] optionnel précise l'événement
+/// (ex. main ouverte pour un doublon, flèche de retour pour une reprise).
 class PopupScore extends StatelessWidget {
   final int nombre;
   final bool estGain;
-  final String? commentaire;
+  final IconData? icone;
 
   const PopupScore({
     super.key,
     required this.nombre,
     required this.estGain,
-    this.commentaire,
+    this.icone,
   });
 
   @override
@@ -74,7 +78,6 @@ class PopupScore extends StatelessWidget {
         duration: const Duration(milliseconds: kDureeMaxEffetMs),
         curve: Curves.easeOutCubic,
         builder: (context, t, enfant) {
-          // Montée puis effacement : visible au milieu, gone à la fin.
           final opacite = t < 0.55 ? t / 0.55 : (1 - t) / 0.45;
           final decalage = (1 - t) * monteeMax * (estGain ? -1 : 1);
           final echelle = 0.7 + 0.3 * Curves.easeOutBack.transform(
@@ -95,26 +98,27 @@ class PopupScore extends StatelessWidget {
               '$signe$nombre',
               style: TextStyle(
                 color: couleur,
-                fontSize: 40,
+                fontSize: 44,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 1,
                 shadows: const [
                   Shadow(color: Colors.black87, blurRadius: 12),
-                  Shadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 2)),
+                  Shadow(
+                    color: Colors.black54,
+                    blurRadius: 4,
+                    offset: Offset(0, 2),
+                  ),
                 ],
               ),
             ),
-            if (commentaire != null)
+            if (icone != null)
               Padding(
                 padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  commentaire!,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    shadows: [Shadow(color: Colors.black87, blurRadius: 8)],
-                  ),
+                child: Icon(
+                  icone,
+                  size: 26,
+                  color: couleur,
+                  shadows: const [Shadow(color: Colors.black87, blurRadius: 8)],
                 ),
               ),
           ],
@@ -125,12 +129,9 @@ class PopupScore extends StatelessWidget {
 }
 
 /// Fait trembler son [enfant] à chaque changement de [declencheur].
-/// Trois impulsions décroissantes sur 220 ms : assez pour ressentir la
-/// perte, trop court pour gêner la lecture du coup suivant.
+/// Trois impulsions décroissantes sur 220 ms.
 class SecousseTapis extends StatefulWidget {
   final Widget enfant;
-
-  /// Toute variation relance la secousse (compteur de pertes, par ex.).
   final int declencheur;
   final double amplitude;
 
@@ -179,7 +180,6 @@ class _SecousseTapisState extends State<SecousseTapis>
       builder: (context, enfant) {
         final t = _ctrl.value;
         if (t <= 0) return enfant!;
-        // 3 impulsions, amplitude décroissante : la table « encaisse ».
         final oscillation = sin(t * pi * 6) * widget.amplitude * (1 - t);
         return Transform.translate(
           offset: Offset(oscillation, 0),
@@ -191,18 +191,17 @@ class _SecousseTapisState extends State<SecousseTapis>
   }
 }
 
-/// Bandeau central pour les moments forts : « DOUBLON ! », « DÉFI MANQUÉ ! ».
-/// Pop élastique puis effacement, 650 ms au total.
-class BanniereEvenement extends StatelessWidget {
-  final String texte;
+/// Bannière centrale SANS TEXTE : un grand pictogramme qui pop puis s'efface.
+/// Remplace les anciennes bannières à mots (« DOUBLON ! », « À TOI ! »…).
+/// Le picto + la couleur portent tout le sens (main ouverte = taper, etc.).
+class BanniereIcone extends StatelessWidget {
+  final IconData icone;
   final Color couleur;
-  final Color couleurTexte;
 
-  const BanniereEvenement({
+  const BanniereIcone({
     super.key,
-    required this.texte,
+    required this.icone,
     this.couleur = Colors.redAccent,
-    this.couleurTexte = Colors.white,
   });
 
   @override
@@ -220,47 +219,42 @@ class BanniereEvenement extends StatelessWidget {
           );
         },
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 12),
+          width: 78,
+          height: 78,
           decoration: BoxDecoration(
             color: couleur,
-            borderRadius: BorderRadius.circular(16),
+            shape: BoxShape.circle,
             boxShadow: const [
               BoxShadow(color: Colors.black54, blurRadius: 18),
             ],
           ),
-          child: Text(
-            texte,
-            style: TextStyle(
-              color: couleurTexte,
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.4,
-            ),
-          ),
+          child: Icon(icone, size: 44, color: Colors.white),
         ),
       ),
     );
   }
 }
 
-/// Retour haptique natif : aucune dépendance ajoutée au pubspec, donc aucun
-/// risque sur la chaîne de build.
+/// Retour haptique natif : aucune dépendance ajoutée au pubspec.
 class RetourTactile {
   RetourTactile._();
 
-  /// Pli gagné : un impact franc.
   static void gain() => HapticFeedback.mediumImpact();
 
-  /// Pli perdu : impact lourd puis rebond léger, la « double claque ».
   static Future<void> perte() async {
     await HapticFeedback.heavyImpact();
     await Future<void>.delayed(const Duration(milliseconds: 90));
     await HapticFeedback.lightImpact();
   }
 
-  /// Doublon : le sommet de la partie, l'impact le plus marqué.
   static void doublon() => HapticFeedback.heavyImpact();
 
-  /// Carte posée : micro-retour, presque subliminal.
   static void pose() => HapticFeedback.selectionClick();
+
+  /// Geste refusé (swipe hors tour) : double tic court, sans violence.
+  static Future<void> refus() async {
+    await HapticFeedback.selectionClick();
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    await HapticFeedback.selectionClick();
+  }
 }
