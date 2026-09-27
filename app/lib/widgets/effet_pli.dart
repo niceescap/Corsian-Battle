@@ -209,7 +209,7 @@ class BanniereEvenement extends StatelessWidget {
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0, end: 1),
+        tween: Tween<double>(begin: 0, end: 1),
         duration: const Duration(milliseconds: 650),
         builder: (context, t, enfant) {
           final apparition = Curves.elasticOut.transform(min(t * 1.8, 1.0));
