@@ -36,7 +36,7 @@ class FlashPli extends StatelessWidget {
     final duree = min(dureeMs, kDureeMaxEffetMs);
     return IgnorePointer(
       child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: opaciteDepart, end: 0),
+        tween: Tween<double>(begin: opaciteDepart, end: 0.0),
         duration: Duration(milliseconds: duree),
         curve: Curves.easeOut,
         builder: (context, opacite, _) => Container(
