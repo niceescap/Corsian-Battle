@@ -60,7 +60,13 @@ class AnalyseurRythme {
 
   // --- Valeurs de repli avant que le joueur soit mesurable ---------------
   static const double _decisionRepliMs = 1400;
-  static const double _tapeRepliMs = 420;
+
+  /// Repli du temps de tape. Ordre de grandeur réaliste de
+  /// (vol de la carte ~400 ms + réaction humaine ~320 ms) : le chrono de
+  /// tape démarre AVANT l'atterrissage, donc la mesure inclut le vol. Un
+  /// repli trop bas rendrait le bot artificiellement rapide pendant les
+  /// premiers doublons.
+  static const double _tapeRepliMs = 720;
 
   /// Point de départ neutre de la maîtrise, avant toute mesure.
   static const double _maitriseInitiale = 0.35;
