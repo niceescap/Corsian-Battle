@@ -51,6 +51,9 @@ class _EcranTableState extends State<EcranTable>
 
   late final AnimationController _ctrlRamasse;
   _LotRamasse? _ramassage;
+  bool _ramassageEnAttente = false;
+  String _messageEnAttente = '';
+  int _vainqueurEnAttente = 0;
 
   @override
   void initState() {
@@ -120,6 +123,7 @@ class _EcranTableState extends State<EcranTable>
       _volantes.clear();
       _feuDoublon = false;
       _ramassage = null;
+      _ramassageEnAttente = false;
       _ctrlRamasse.reset();
     });
     _partie.nouvellePartie();
@@ -160,6 +164,7 @@ class _EcranTableState extends State<EcranTable>
             ),
           );
         });
+        _declencherRamassageEnAttente();
       },
     );
     setState(() => _volantes.add(volante));
@@ -183,6 +188,25 @@ class _EcranTableState extends State<EcranTable>
   }
 
   void _onPliRamasse(int indexVainqueur, int nombreCartes) {
+    // Le message est figé ici : la règle qui a déclenché le ramassage ne
+    // doit pas être écrasée par le coup suivant si le balayage est différé.
+    final message = _messageRamasse(indexVainqueur, nombreCartes);
+
+    // La carte qui vient de déclencher le ramassage (carte perdante d'un
+    // défi manqué, ou seconde carte d'un doublon) est encore EN VOL. On
+    // diffère le balayage jusqu'à son atterrissage : sinon elle resterait
+    // orpheline sur le tapis et donnerait la suite.
+    if (_volantes.isNotEmpty) {
+      _ramassageEnAttente = true;
+      _vainqueurEnAttente = indexVainqueur;
+      _messageEnAttente = message;
+      setState(() => _feuDoublon = false);
+      return;
+    }
+    _executerRamassage(indexVainqueur, message);
+  }
+
+  void _executerRamassage(int indexVainqueur, String message) {
     final taille = _tailleEcran();
     if (taille == Size.zero || _pliVisible.isEmpty) {
       setState(() => _feuDoublon = false);
@@ -206,9 +230,18 @@ class _EcranTableState extends State<EcranTable>
       ..showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 2),
-          content: Text(_messageRamasse(indexVainqueur, nombreCartes)),
+          content: Text(message),
         ),
       );
+  }
+
+  void _declencherRamassageEnAttente() {
+    if (!_ramassageEnAttente) return;
+    if (_volantes.isNotEmpty) return;
+    _ramassageEnAttente = false;
+    final vainqueur = _vainqueurEnAttente;
+    final message = _messageEnAttente;
+    _executerRamassage(vainqueur, message);
   }
 
   Size _tailleEcran() {
