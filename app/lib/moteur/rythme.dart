@@ -269,11 +269,11 @@ class CerveauTempo {
   static const double _ordonneeEquite = 250;
 
   // --- Réflexe du bot sur doublon ------------------------------------
-  /// Joueur novice : le bot tape tard, la course est gagnable.
-  static const double reflexeBotLentMs = 430;
+  /// Joueur novice : le bot tape plus tard que lui, la course est gagnable.
+  static const double _ratioTapeLent = 1.10;
 
   /// Joueur expert : le bot serre, la course devient tendue.
-  static const double reflexeBotVifMs = 245;
+  static const double _ratioTapeVif = 0.88;
 
   /// Amplitude du jitter : jamais d'horloge mécanique.
   static const double amplitudeJitter = 0.12;
