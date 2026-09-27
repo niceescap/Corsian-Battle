@@ -74,7 +74,7 @@ class _EcranAccueilState extends State<EcranAccueil> {
                     const SizedBox(height: 26),
                     _carteMode(
                       mode: ModePartie.duel,
-                      icone: Icons.sports_martial_arts,
+                      icone: Icons.bolt,
                       titre: 'Duel',
                       sousTitre: '1 contre 1 · l’adversaire épouse ton rythme',
                       accent: const Color(0xFFFFD54F),
@@ -82,7 +82,7 @@ class _EcranAccueilState extends State<EcranAccueil> {
                     const SizedBox(height: 12),
                     _carteMode(
                       mode: ModePartie.tableQuatre,
-                      icone: Icons.groups_2,
+                      icone: Icons.groups,
                       titre: 'Table à 4',
                       sousTitre: 'Marc, Julie et Théo · la table historique',
                       accent: const Color(0xFF80CBC4),
