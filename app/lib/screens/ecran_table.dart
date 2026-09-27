@@ -8,22 +8,28 @@ import '../moteur/partie_locale.dart';
 import '../widgets/carte_volante.dart';
 import '../widgets/carte_widget.dart';
 import '../widgets/effet_pli.dart';
+import '../widgets/emplacement_pub.dart';
 import '../widgets/entete.dart';
 import '../widgets/fleche_joueur.dart';
 import '../widgets/tas_joueur.dart';
 
 /// Écran de la table animé par [PartieLocale].
 ///
-/// Deux configurations, un seul écran :
-/// - [ModePartie.duel] : 1 contre 1, l'adversaire-machine épouse le rythme
-///   du joueur (voir moteur/rythme.dart). Disposition en vis-à-vis.
-/// - [ModePartie.tableQuatre] : la table historique face à Marc, Julie et
-///   Théo, chacun avec son temps de réaction fixe. Disposition en arc.
+/// UX UNIVERSELLE : pendant la partie, il n'y a RIEN À LIRE. Le sens passe
+/// uniquement par la couleur (vert = gagné, rouge = perdu/urgence), les
+/// pictogrammes, les chiffres et la direction des animations. Seuls les noms
+/// propres (joueur, adversaires) subsistent.
 ///
-/// Les phases de gain et de perte d'un pli sont désormais incarnées
-/// (flash, score flottant, secousse de table, bannière, retour haptique),
-/// mais plafonnées à 700 ms : la demande centrale du duel est la VITESSE,
-/// aucun effet ne doit la trahir ni avaler un geste.
+/// Deux configurations, un seul écran :
+/// - [ModePartie.duel] : 1 contre 1, l'adversaire-machine épouse le rythme du
+///   joueur en INTERNE (moteur/rythme.dart) — la mécanique reste active mais
+///   n'est plus exposée textuellement.
+/// - [ModePartie.tableQuatre] : la table historique face à Marc, Julie et Théo.
+///
+/// Front remanié : tapis au format CARRÉ, ce qui libère une bande au-dessus
+/// pour un emplacement publicitaire AdMob rectangulaire ; le paquet du joueur
+/// est agrandi (+10 %) et remonté près de la zone de jeu ; la course au
+/// doublon se joue en TAPANT N'IMPORTE OÙ SUR LE TAPIS, qui vire au rouge.
 class EcranTable extends StatefulWidget {
   final ConfigPartie config;
 
@@ -54,19 +60,17 @@ class _LotRamasse {
 ///
 /// Nécessaire : le balayage peut être différé (la carte déclencheuse est
 /// encore en vol), et pendant ce temps le moteur a déjà réinitialisé
-/// `derniereRaisonPli` et `dernierPliRepriseEnJeu`. Sans cet instantané,
-/// les effets joueraient la mauvaise émotion.
+/// `derniereRaisonPli` et `dernierPliRepriseEnJeu`. Sans cet instantané, les
+/// effets joueraient la mauvaise émotion.
 class _EvenementPli {
   final int vainqueur;
   final int nombreCartes;
-  final String message;
   final String raison;
   final bool repriseEnJeu;
 
   const _EvenementPli({
     required this.vainqueur,
     required this.nombreCartes,
-    required this.message,
     required this.raison,
     required this.repriseEnJeu,
   });
@@ -76,7 +80,7 @@ class _EvenementPli {
 }
 
 class _EcranTableState extends State<EcranTable>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final _rng = Random();
   late final PartieLocale _partie;
 
@@ -89,6 +93,9 @@ class _EcranTableState extends State<EcranTable>
 
   late final AnimationController _ctrlRamasse;
   _LotRamasse? _ramassage;
+
+  /// Pulsation douce de l'indice « à toi de jouer » et de la main du doublon.
+  late final AnimationController _ctrlIndice;
 
   // --- Balayage différé (attend la fin du vol de la carte déclencheuse) --
   bool _ramassageEnAttente = false;
@@ -103,17 +110,21 @@ class _EcranTableState extends State<EcranTable>
 
   int? _popupNombre;
   bool _popupGain = true;
-  String? _popupCommentaire;
+  IconData? _popupIcone;
   int _clePopup = 0;
   Timer? _timerPopup;
 
-  String? _banniereTexte;
+  IconData? _banniereIcone;
   Color _banniereCouleur = Colors.redAccent;
   int _cleBanniere = 0;
   Timer? _timerBanniere;
 
   /// Toute variation déclenche une secousse de table (perte d'un pli).
   int _compteurSecousses = 0;
+
+  /// Taille de la zone de jeu (sous entête + pub), mise à jour à chaque
+  /// build. Source de vérité géométrique pour le vol des cartes et le tapis.
+  Size _tailleTable = Size.zero;
 
   @override
   void initState() {
@@ -123,6 +134,11 @@ class _EcranTableState extends State<EcranTable>
       vsync: this,
       duration: const Duration(milliseconds: 420),
     )..addListener(() => setState(() {}));
+
+    _ctrlIndice = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
 
     _partie = PartieLocale();
     _partie.surPose = _onCartePosee;
@@ -143,6 +159,7 @@ class _EcranTableState extends State<EcranTable>
     _partie.removeListener(_surNotifMoteur);
     _partie.dispose();
     _ctrlRamasse.dispose();
+    _ctrlIndice.dispose();
     super.dispose();
   }
 
@@ -161,32 +178,25 @@ class _EcranTableState extends State<EcranTable>
   void _afficherDialogFin() {
     final gagnant = _partie.vainqueurFinal;
 
-    final String titre;
-    final String detail;
+    final IconData icone;
+    final String mot; // terme anglais minimal, le picto porte l'essentiel
     final Color fond;
 
-    if (_partie.estPartieNulle) {
-      // Cas réel et fréquent en duel : les deux tas se renvoient les cartes
-      // sans jamais produire de vainqueur. Annoncer une partie nulle, pas un
-      // « match interrompu » qui se lirait comme un bug.
-      titre = 'Partie nulle';
-      detail = widget.config.estDuel
-          ? 'Les deux tas se renvoient les cartes indéfiniment.\nAucun vainqueur : on redistribue.'
-          : 'La table boucle sans vainqueur.\nOn redistribue les cartes.';
-      fond = const Color(0xFF37474F);
-    } else if (gagnant == null) {
-      titre = 'Match interrompu';
-      detail = '';
+    if (_partie.estPartieNulle || gagnant == null) {
+      icone = Icons.handshake;
+      mot = 'DRAW';
       fond = const Color(0xFF37474F);
     } else if (gagnant.estBot) {
-      titre = '${gagnant.nom} remporte la partie';
-      detail = _defaiteDetail();
+      icone = Icons.heart_broken;
+      mot = 'DEFEAT';
       fond = const Color(0xFF7B2C2C);
     } else {
-      titre = 'Tu gagnes la partie ! 🎉';
-      detail = _victoireDetail();
+      icone = Icons.emoji_events;
+      mot = 'WIN';
       fond = const Color(0xFF0F5C3E);
     }
+
+    final a = _partie.analyseur;
 
     showDialog<void>(
       context: context,
@@ -196,107 +206,88 @@ class _EcranTableState extends State<EcranTable>
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
-        title: Text(
-          titre,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w900,
-            fontSize: 21,
-          ),
-        ),
-        content: Column(
+        title: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (detail.isNotEmpty)
-              Text(
-                detail,
-                style: const TextStyle(color: Colors.white70, fontSize: 13.5),
+            Icon(icone, size: 56, color: Colors.white),
+            const SizedBox(height: 6),
+            Text(
+              mot,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 22,
+                letterSpacing: 2,
               ),
-            const SizedBox(height: 14),
-            _ligneBilan(
-              'Niveau détecté',
-              _partie.analyseur.libelleMaitrise,
-            ),
-            if (_partie.analyseur.doublonsVus > 0)
-              _ligneBilan(
-                'Doublons tapés',
-                '${_partie.analyseur.doublonsGagnes}'
-                ' / ${_partie.analyseur.doublonsVus}',
-              ),
-            _ligneBilan(
-              'Ton tempo moyen',
-              '${_partie.analyseur.tempsDecisionMs.round()} ms',
             ),
           ],
         ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Maîtrise : jauge seule, aucun mot.
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: a.maitrise,
+                minHeight: 6,
+                backgroundColor: Colors.white24,
+                valueColor: const AlwaysStoppedAnimation(Color(0xFFFFD54F)),
+              ),
+            ),
+            const SizedBox(height: 14),
+            _ligneStat(Icons.emoji_events, '${a.scoreAffiche}'),
+            if (a.doublonsVus > 0)
+              _ligneStat(Icons.back_hand, '${a.doublonsGagnes}/${a.doublonsVus}'),
+            _ligneStat(Icons.timer_outlined, '${a.tempsDecisionMs.round()} ms'),
+          ],
+        ),
         actions: [
-          TextButton(
+          TextButton.icon(
             onPressed: () {
               Navigator.of(context).pop();
               _quitterTable();
             },
-            child: const Text('Menu'),
+            icon: const Icon(Icons.home_outlined, size: 18),
+            label: const Text('MENU'),
+            style: TextButton.styleFrom(foregroundColor: Colors.white70),
           ),
-          TextButton(
+          TextButton.icon(
             onPressed: () {
               Navigator.of(context).pop();
               _reinitialiser();
             },
-            child: const Text(
-              'Rejouer',
+            icon: const Icon(Icons.replay, size: 18),
+            label: const Text(
+              'AGAIN',
               style: TextStyle(fontWeight: FontWeight.w900),
             ),
+            style: TextButton.styleFrom(foregroundColor: Colors.white),
           ),
         ],
       ),
     );
   }
 
-  Widget _ligneBilan(String etiquette, String valeur) {
+  /// Ligne de bilan : picto + valeur (chiffre universel), aucun mot descriptif.
+  Widget _ligneStat(IconData icone, String valeur) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            etiquette,
-            style: const TextStyle(color: Colors.white54, fontSize: 12.5),
-          ),
+          Icon(icone, color: Colors.white54, size: 18),
           Text(
             valeur,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],
       ),
     );
-  }
-
-  String _victoireDetail() {
-    final a = _partie.analyseur;
-    if (a.maitrise > 0.70) {
-      return 'Tu joues à pleine vitesse et il suivait à peine.\n'
-          'Le miroir a craqué : tu es au-dessus.';
-    }
-    if (a.doublonsVus > 0 && a.doublonsGagnes > a.doublonsVus / 2) {
-      return 'Tes tapes sur doublon ont fait la différence.';
-    }
-    return 'Les 52 cartes sont dans ton tas.';
-  }
-
-  String _defaiteDetail() {
-    final a = _partie.analyseur;
-    if (a.maitrise < 0.30) {
-      return 'Il jouait à ton rythme, doucement. Prends ta revanche plus vif.';
-    }
-    if (a.doublonsVus > 0 && a.doublonsGagnes == 0) {
-      return 'Aucun doublon tapé sur ${a.doublonsVus} : c’est là que ça se joue.';
-    }
-    return 'Il a tenu ta cadence jusqu’au bout.';
   }
 
   void _quitterTable() {
@@ -314,7 +305,7 @@ class _EcranTableState extends State<EcranTable>
       _evenementEnAttente = null;
       _flashCouleur = null;
       _popupNombre = null;
-      _banniereTexte = null;
+      _banniereIcone = null;
       _ctrlRamasse.reset();
     });
     _partie.nouvellePartie(configuration: widget.config);
@@ -326,19 +317,19 @@ class _EcranTableState extends State<EcranTable>
   void _onDoublonOuvert() {
     setState(() => _feuDoublon = true);
     RetourTactile.doublon();
-    // Annonce immédiate : le joueur doit savoir qu'une course s'ouvre.
-    _lancerBanniere('DOUBLON !', Colors.redAccent, 620);
+    // Signal 100 % visuel : le tapis vire au rouge (voir _overlayTape).
   }
 
   void _onCartePosee(int indexJoueur, String code, bool venantDHumain) {
-    final taille = _tailleEcran();
+    final taille = _tailleTable;
     if (taille == Size.zero) return;
 
     final vitesse =
         venantDHumain ? _derniereVitesseHumain : 900 + _rng.nextDouble() * 1400;
+    final centre = _rectTapis(taille).center;
     final arrivee = Offset(
-      taille.width / 2 + (_rng.nextDouble() - 0.5) * 70,
-      taille.height * 0.42 + (_rng.nextDouble() - 0.5) * 40,
+      centre.dx + (_rng.nextDouble() - 0.5) * 70,
+      centre.dy + (_rng.nextDouble() - 0.5) * 44,
     );
     final depart = _origineJoueur(indexJoueur, taille);
     final rotationFinale = (_rng.nextDouble() - 0.5) * 0.6;
@@ -370,39 +361,17 @@ class _EcranTableState extends State<EcranTable>
     setState(() => _volantes.add(volante));
   }
 
-  /// Annonce LA règle qui a donné le pli, et signale la reprise-en-jeu.
-  String _messageRamasse(int vainqueur, int nb) {
-    final nom = _partie.joueurs[vainqueur].nom;
-    String base;
-    if (_partie.derniereRaisonPli == 'Doublon') {
-      base = '$nom a tapé sur le doublon : $nb carte(s) !';
-    } else if (_partie.derniereRaisonPli == 'Défi manqué') {
-      base = 'Défi manqué : $nom remporte $nb carte(s).';
-    } else {
-      base = '$nom ramasse $nb carte(s).';
-    }
-    if (_partie.dernierPliRepriseEnJeu && vainqueur == 0) {
-      return '$base\n💥 Tu reviens en jeu !';
-    }
-    return base;
-  }
-
   void _onPliRamasse(int indexVainqueur, int nombreCartes) {
-    // L'instantané est figé ICI : le balayage peut être différé, et pendant
-    // ce temps le moteur réinitialise déjà `derniereRaisonPli`. Sans ça, les
-    // effets joueraient la mauvaise émotion.
     final evenement = _EvenementPli(
       vainqueur: indexVainqueur,
       nombreCartes: nombreCartes,
-      message: _messageRamasse(indexVainqueur, nombreCartes),
       raison: _partie.derniereRaisonPli,
       repriseEnJeu: _partie.dernierPliRepriseEnJeu && indexVainqueur == 0,
     );
 
-    // La carte qui vient de déclencher le ramassage (carte perdante d'un
-    // défi manqué, ou seconde carte d'un doublon) est encore EN VOL. On
-    // diffère le balayage jusqu'à son atterrissage : sinon elle resterait
-    // orpheline sur le tapis et donnerait la suite.
+    // La carte qui vient de déclencher le ramassage est encore EN VOL : on
+    // diffère le balayage jusqu'à son atterrissage pour ne pas la laisser
+    // orpheline sur le tapis.
     if (_volantes.isNotEmpty) {
       _ramassageEnAttente = true;
       _evenementEnAttente = evenement;
@@ -413,7 +382,7 @@ class _EcranTableState extends State<EcranTable>
   }
 
   void _executerRamassage(_EvenementPli evenement) {
-    final taille = _tailleEcran();
+    final taille = _tailleTable;
 
     // Les effets émotionnels partent dans TOUS les cas, même si le balayage
     // visuel n'a rien à montrer : le gain/la perte doit toujours se lire.
@@ -435,15 +404,6 @@ class _EcranTableState extends State<EcranTable>
     _ctrlRamasse.forward(from: 0).whenComplete(() {
       if (mounted) setState(() => _ramassage = null);
     });
-
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 2),
-          content: Text(evenement.message),
-        ),
-      );
   }
 
   void _declencherRamassageEnAttente() {
@@ -457,27 +417,8 @@ class _EcranTableState extends State<EcranTable>
   }
 
   // ------------------------------------------------------------------ //
-  // Effets de gain / perte                                             //
+  // Effets de gain / perte — pictogrammes, aucun mot                   //
   // ------------------------------------------------------------------ //
-  static const List<String> _crisVictoire = [
-    'FULGURANT !',
-    'DANS TA MAIN !',
-    'IMPARABLE !',
-    'LE PLI EXPLOSE !',
-    'TAPÉ !',
-  ];
-
-  static const List<String> _crisDefaite = [
-    'IL A EU LE GESTE',
-    'TROP JUSTE…',
-    'IL SUIVAIT TON RYTHME',
-  ];
-
-  String _cri(bool estGain) {
-    final source = estGain ? _crisVictoire : _crisDefaite;
-    return source[_rng.nextInt(source.length)];
-  }
-
   void _jouerEffetPli(_EvenementPli evenement) {
     final estGain = evenement.vainqueur == 0;
 
@@ -488,17 +429,9 @@ class _EcranTableState extends State<EcranTable>
         evenement.estDoublon ? 0.55 : 0.40,
         evenement.estDoublon ? 420 : 340,
       );
-      _lancerPopup(
-        evenement.nombreCartes,
-        true,
-        evenement.repriseEnJeu
-            ? 'TU REVIENS EN JEU !'
-            : (evenement.estDoublon ? _cri(true) : null),
-      );
+      _lancerPopup(evenement.nombreCartes, true, _iconeGain(evenement));
       if (evenement.estDoublon) {
-        _lancerBanniere('À TOI !', Colors.amberAccent, 700);
-      } else if (evenement.estDefiManque) {
-        _lancerBanniere('DÉFI MANQUÉ !', Colors.amber, 660);
+        _lancerBanniere(Icons.back_hand, Colors.amberAccent, 700);
       }
       return;
     }
@@ -507,16 +440,23 @@ class _EcranTableState extends State<EcranTable>
     // La secousse accompagne le balayage : la table « encaisse » la perte.
     setState(() => _compteurSecousses++);
     _lancerFlash(const Color(0xFFB71C1C), 0.38, 400);
-    _lancerPopup(
-      evenement.nombreCartes,
-      false,
-      evenement.estDoublon ? _cri(false) : null,
-    );
+    _lancerPopup(evenement.nombreCartes, false, _iconePerte(evenement));
     if (evenement.estDoublon) {
-      _lancerBanniere('IL A TAPÉ !', Colors.redAccent, 680);
-    } else if (evenement.estDefiManque) {
-      _lancerBanniere('TU AS CRAQUÉ', Colors.deepOrange, 660);
+      _lancerBanniere(Icons.back_hand, Colors.redAccent, 680);
     }
+  }
+
+  IconData? _iconeGain(_EvenementPli e) {
+    if (e.repriseEnJeu) return Icons.replay; // tu reviens en jeu
+    if (e.estDoublon) return Icons.back_hand; // gagné au tap
+    if (e.estDefiManque) return Icons.card_giftcard; // défi remporté
+    return null;
+  }
+
+  IconData? _iconePerte(_EvenementPli e) {
+    if (e.estDoublon) return Icons.back_hand; // l'autre a tapé
+    if (e.estDefiManque) return Icons.close; // défi craqué
+    return null;
   }
 
   void _lancerFlash(Color couleur, double opacite, int dureeMs) {
@@ -533,13 +473,13 @@ class _EcranTableState extends State<EcranTable>
     });
   }
 
-  void _lancerPopup(int nombre, bool estGain, String? commentaire) {
+  void _lancerPopup(int nombre, bool estGain, IconData? icone) {
     _timerPopup?.cancel();
     setState(() {
       _clePopup++;
       _popupNombre = nombre;
       _popupGain = estGain;
-      _popupCommentaire = commentaire;
+      _popupIcone = icone;
     });
     _timerPopup = Timer(const Duration(milliseconds: kDureeMaxEffetMs + 80), () {
       if (!mounted) return;
@@ -547,46 +487,53 @@ class _EcranTableState extends State<EcranTable>
     });
   }
 
-  void _lancerBanniere(String texte, Color couleur, int dureeMs) {
+  void _lancerBanniere(IconData icone, Color couleur, int dureeMs) {
     _timerBanniere?.cancel();
     final duree = min(dureeMs, kDureeMaxEffetMs);
     setState(() {
       _cleBanniere++;
-      _banniereTexte = texte;
+      _banniereIcone = icone;
       _banniereCouleur = couleur;
     });
     _timerBanniere = Timer(Duration(milliseconds: duree), () {
       if (!mounted) return;
-      setState(() => _banniereTexte = null);
+      setState(() => _banniereIcone = null);
     });
   }
 
   // ------------------------------------------------------------------ //
-  // Géométrie                                                          //
+  // Géométrie — tapis CARRÉ centré dans la zone de jeu                 //
   // ------------------------------------------------------------------ //
-  Size _tailleEcran() {
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return Size.zero;
-    return box.size;
+
+  /// Le tapis : un carré centré horizontalement, placé dans la partie haute
+  /// de la zone de jeu pour laisser de l'air au paquet du joueur en bas.
+  Rect _rectTapis(Size z) {
+    final margeX = z.width * 0.07;
+    final cote = min(z.width - 2 * margeX, z.height * 0.56);
+    final left = (z.width - cote) / 2;
+    final top = z.height * 0.13;
+    return Rect.fromLTWH(left, top, cote, cote);
   }
 
-  Offset _origineJoueur(int indexJoueur, Size taille) {
+  Offset _origineJoueur(int indexJoueur, Size z) {
     if (indexJoueur == 0) {
-      return Offset(taille.width / 2 - 32, taille.height - 34);
+      // Centre du paquet du joueur, en bas de la zone.
+      return Offset(z.width / 2 - 32, z.height - 40);
     }
     final nAdversaires = _partie.joueurs.length - 1;
     final rang = indexJoueur - 1;
-    // En duel (nAdversaires == 1) l'angle vaut 0 : l'adversaire est pile
-    // au sommet, en vis-à-vis. En table à 4, l'arc 9h -> 3h est conservé.
+    return _origineAdversaire(rang, nAdversaires, z);
+  }
+
+  /// Position d'un adversaire : en duel pile au sommet (vis-à-vis) ; en table
+  /// à 4, répartis en arc au-dessus du tapis.
+  Offset _origineAdversaire(int rang, int nAdversaires, Size z) {
     final angleDeg =
         nAdversaires == 1 ? 0.0 : -90 + (rang / (nAdversaires - 1)) * 180;
-    final angleRad = angleDeg * pi / 180;
-    final rayon = taille.width * 0.36;
-    final hautTapis = taille.height * 0.16;
-    return Offset(
-      taille.width / 2 + rayon * sin(angleRad) - 24,
-      hautTapis + 10 - 10 * cos(angleRad),
-    );
+    final rad = angleDeg * pi / 180;
+    final x = z.width / 2 + z.width * 0.30 * sin(rad);
+    final y = z.height * 0.035 + 8 - 8 * cos(rad);
+    return Offset(x - 24, y);
   }
 
   // ------------------------------------------------------------------ //
@@ -599,76 +546,71 @@ class _EcranTableState extends State<EcranTable>
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, contraintes) {
-            final taille = Size(contraintes.maxWidth, contraintes.maxHeight);
-            return Stack(
-              clipBehavior: Clip.none,
+            final largeur = contraintes.maxWidth;
+            return Column(
               children: [
-                Column(
-                  children: [
-                    Entete(
-                      score: _partie.joueurs.isEmpty
-                          ? null
-                          : _partie.analyseur.scoreAffiche,
-                      libelle: _partie.joueurs.isEmpty
-                          ? null
-                          : _partie.analyseur.libelleMaitrise,
-                      onRetour: _quitterTable,
-                    ),
-                    // La secousse englobe TOUTE la table : tapis, cartes et
-                    // joueurs tremblent ensemble sur une perte.
-                    Expanded(
-                      child: SecousseTapis(
-                        declencheur: _compteurSecousses,
-                        enfant: _table(taille),
-                      ),
-                    ),
-                  ],
+                Entete(
+                  score: _partie.joueurs.isEmpty
+                      ? null
+                      : _partie.analyseur.scoreAffiche,
+                  onRetour: _quitterTable,
                 ),
-
-                // Zone de tap sur doublon : plein écran pendant la course.
-                if (_feuDoublon) _zoneTape(taille),
-
-                // Bandeau d'état / consignes.
-                Positioned(
-                  left: 12,
-                  bottom: 160,
-                  child: IgnorePointer(child: _bandeau()),
+                // Emplacement AdMob rectangulaire, libéré par le tapis carré.
+                EmplacementPub(
+                  format: FormatPub.grandBanniere,
+                  largeurDisponible: largeur,
                 ),
-
-                // --- Effets : toujours au-dessus, toujours IgnorePointer ---
-                if (_flashCouleur != null)
-                  Positioned.fill(
-                    child: FlashPli(
-                      key: ValueKey(_cleFlash),
-                      couleur: _flashCouleur!,
-                      opaciteDepart: _flashOpacite,
-                      dureeMs: _flashDuree,
-                    ),
+                // Zone de jeu : tout le reste, mesuré précisément.
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, c2) {
+                      _tailleTable = Size(c2.maxWidth, c2.maxHeight);
+                      return Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned.fill(
+                            child: SecousseTapis(
+                              declencheur: _compteurSecousses,
+                              enfant: _table(_tailleTable),
+                            ),
+                          ),
+                          // --- Effets plein écran, toujours IgnorePointer ---
+                          if (_flashCouleur != null)
+                            Positioned.fill(
+                              child: FlashPli(
+                                key: ValueKey(_cleFlash),
+                                couleur: _flashCouleur!,
+                                opaciteDepart: _flashOpacite,
+                                dureeMs: _flashDuree,
+                              ),
+                            ),
+                          if (_popupNombre != null)
+                            Positioned.fill(
+                              child: Center(
+                                child: PopupScore(
+                                  key: ValueKey(_clePopup),
+                                  nombre: _popupNombre!,
+                                  estGain: _popupGain,
+                                  icone: _popupIcone,
+                                ),
+                              ),
+                            ),
+                          if (_banniereIcone != null)
+                            Positioned.fill(
+                              child: Align(
+                                alignment: const Alignment(0, -0.45),
+                                child: BanniereIcone(
+                                  key: ValueKey(_cleBanniere),
+                                  icone: _banniereIcone!,
+                                  couleur: _banniereCouleur,
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
                   ),
-
-                if (_popupNombre != null)
-                  Positioned.fill(
-                    child: Center(
-                      child: PopupScore(
-                        key: ValueKey(_clePopup),
-                        nombre: _popupNombre!,
-                        estGain: _popupGain,
-                        commentaire: _popupCommentaire,
-                      ),
-                    ),
-                  ),
-
-                if (_banniereTexte != null)
-                  Positioned.fill(
-                    child: Align(
-                      alignment: const Alignment(0, -0.42),
-                      child: BanniereEvenement(
-                        key: ValueKey(_cleBanniere),
-                        texte: _banniereTexte!,
-                        couleur: _banniereCouleur,
-                      ),
-                    ),
-                  ),
+                ),
               ],
             );
           },
@@ -677,15 +619,20 @@ class _EcranTableState extends State<EcranTable>
     );
   }
 
-  Widget _table(Size taille) {
+  Widget _table(Size z) {
     if (_partie.joueurs.isEmpty) {
       return const Center(
-        child: Text(
-          'Distribution des cartes…',
-          style: TextStyle(color: Colors.white70),
+        child: SizedBox(
+          width: 30,
+          height: 30,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.5,
+            valueColor: AlwaysStoppedAnimation(Colors.white38),
+          ),
         ),
       );
     }
+
     final adversaires = <JoueurUI>[
       for (var i = 1; i < _partie.joueurs.length; i++)
         JoueurUI(
@@ -698,13 +645,12 @@ class _EcranTableState extends State<EcranTable>
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        _tapis(taille),
+        _tapis(z),
 
-        // En duel : l'adversaire en vis-à-vis, avec son indicateur
-        // d'harmonie. En table à 4 : l'arc historique 9h -> 3h.
-        ..._zoneAdversaires(taille, adversaires),
+        // Adversaires : vis-à-vis en duel, arc en table à 4.
+        ..._zoneAdversaires(z, adversaires),
 
-        // Pli visible au centre.
+        // Pli visible au centre du tapis.
         for (final c in _pliVisible)
           Positioned(
             left: c.position.dx - 32,
@@ -715,7 +661,7 @@ class _EcranTableState extends State<EcranTable>
             ),
           ),
 
-        // Vol terminée vers le vainqueur du pli.
+        // Balayage du pli vers le vainqueur.
         if (_ramassage != null)
           for (final c in _ramassage!.cartes)
             Builder(builder: (_) {
@@ -737,42 +683,75 @@ class _EcranTableState extends State<EcranTable>
         // Cartes en vol.
         ..._volantes,
 
-        // Tas du joueur (toujours dos visible jusqu'au lancer).
+        // Indice « à toi de jouer » : chevron qui pulse, aucun mot.
+        if (_partie.auTourDeLHumain && _partie.humain.aDesCartes)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 116,
+            child: Center(child: _indiceSwipe()),
+          ),
+
+        // Paquet du joueur : dos visible jusqu'au lancer, agrandi et remonté.
         Align(
           alignment: Alignment.bottomCenter,
           child: TasJoueur(
             nombreCartes: _partie.humain.nombreCartes,
             onCarteJouee: (vitesse) {
               if (!_partie.humainPose()) {
-                // Refus limpide plutôt qu'un geste avalé sans réponse.
-                ScaffoldMessenger.of(context)
-                  ..clearSnackBars()
-                  ..showSnackBar(const SnackBar(
-                    duration: Duration(milliseconds: 700),
-                    content: Text('Pas ton tour !'),
-                  ));
+                // Refus sans texte : double tic haptique.
+                RetourTactile.refus();
                 return;
               }
               _derniereVitesseHumain = vitesse;
             },
           ),
         ),
+
+        // Zone de tap sur doublon : TOUT le carré du tapis, qui vire au rouge.
+        if (_feuDoublon) _overlayTape(z),
       ],
     );
   }
 
-  /// Zone des adversaires selon le mode de table.
-  ///
-  /// Duel : un seul panneau en vis-à-vis, au sommet.
-  /// Table à 4 : l'arc historique 9h -> 3h, inchangé.
-  List<Widget> _zoneAdversaires(Size taille, List<JoueurUI> adversaires) {
+  /// Chevron pulsant au-dessus du paquet : « swipe vers le haut », universel.
+  Widget _indiceSwipe() {
+    return AnimatedBuilder(
+      animation: _ctrlIndice,
+      builder: (context, _) {
+        final t = _ctrlIndice.value;
+        return Opacity(
+          opacity: 0.35 + 0.45 * t,
+          child: Transform.translate(
+            offset: Offset(0, -4 * t),
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: const BoxDecoration(
+                color: Color(0x33FFD54F),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.keyboard_double_arrow_up,
+                color: Color(0xFFFFD54F),
+                size: 22,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Adversaires selon le mode : panneau unique en duel, arc en table à 4.
+  List<Widget> _zoneAdversaires(Size z, List<JoueurUI> adversaires) {
     if (_partie.config.estDuel) {
       return [
         Positioned(
           left: 0,
           right: 0,
-          top: taille.height * 0.035,
-          child: _panneauAdversaire(taille),
+          top: z.height * 0.02,
+          child: _panneauAdversaire(z),
         ),
       ];
     }
@@ -780,33 +759,32 @@ class _EcranTableState extends State<EcranTable>
     return [
       for (var i = 0; i < adversaires.length; i++)
         Builder(builder: (_) {
-          final angleDeg = adversaires.length == 1
-              ? 0.0
-              : -90 + (i / (adversaires.length - 1)) * 180;
-          final angleRad = angleDeg * pi / 180;
-          final x = taille.width / 2 + taille.width * 0.36 * sin(angleRad);
-          final y = taille.height * 0.16 + 10 - 10 * cos(angleRad);
+          final n = adversaires.length;
+          final angleDeg = n == 1 ? 0.0 : -90 + (i / (n - 1)) * 180;
+          final rad = angleDeg * pi / 180;
+          final x = z.width / 2 + z.width * 0.30 * sin(rad);
+          final y = z.height * 0.035 + 8 - 8 * cos(rad);
           return Positioned(
-            left: x - 24,
+            left: x - 55,
             top: y,
-            child: FlecheJoueur(joueur: adversaires[i], angleRad: angleRad),
+            child: FlecheJoueur(joueur: adversaires[i], angleRad: rad),
           );
         }),
     ];
   }
 
-  /// Panneau de l'adversaire-machine en duel : identité, tas, et surtout
-  /// l'indicateur d'HARMONIE — le joueur doit voir que sa cadence est suivie.
-  Widget _panneauAdversaire(Size taille) {
+  /// Panneau adversaire MINIMALISTE : avatar, nom, dos du paquet, nombre de
+  /// cartes. Toute la mécanique d'harmonisation du tempo reste active en
+  /// interne (moteur/rythme.dart) mais n'est plus exposée au joueur.
+  Widget _panneauAdversaire(Size z) {
     final bot = _partie.adversaire;
     final estActif = _partie.phase == PhasePartie.reflexionBot &&
         _partie.joueurs[_partie.indexCourant].estBot;
-    final maitrise = _partie.analyseur.maitrise;
 
     return Center(
       child: Container(
-        constraints: BoxConstraints(maxWidth: taille.width * 0.72),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        constraints: BoxConstraints(maxWidth: z.width * 0.72),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: estActif
               ? const Color(0xFFFFD54F).withOpacity(0.16)
@@ -828,124 +806,58 @@ class _EcranTableState extends State<EcranTable>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Avatar (bot) + halo d'activité, sans texte.
             Stack(
               alignment: Alignment.center,
               children: [
                 CircleAvatar(
-                  radius: 19,
+                  radius: 18,
                   backgroundColor: Colors.white12,
                   child: const Icon(
                     Icons.smart_toy,
                     color: Color(0xFFFFD54F),
-                    size: 22,
+                    size: 21,
                   ),
                 ),
                 if (estActif)
-                  SizedBox(
-                    width: 44,
-                    height: 44,
+                  const SizedBox(
+                    width: 42,
+                    height: 42,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor:
-                          const AlwaysStoppedAnimation(Color(0xFFFFD54F)),
+                      valueColor: AlwaysStoppedAnimation(Color(0xFFFFD54F)),
                     ),
                   ),
               ],
             ),
-            const SizedBox(width: 11),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      bot.nom,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.4,
-                      ),
-                    ),
-                    const SizedBox(width: 7),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 1,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white12,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '${bot.nombreCartes}',
-                        style: const TextStyle(
-                          color: Color(0xFFFFD54F),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _iconeHarmonie(),
-                      size: 12,
-                      color: Colors.white54,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      _libelleHarmonie(),
-                      style: const TextStyle(
-                        color: Colors.white60,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+            const SizedBox(width: 10),
+            // Dos du paquet de l'adversaire.
+            Transform.scale(scale: 0.95, child: CarteWidget(largeur: 22, hauteur: 31)),
+            const SizedBox(width: 10),
+            // Nom (nom propre) + nombre de cartes (chiffre universel).
+            Text(
+              bot.nom,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.4,
+              ),
             ),
-            const SizedBox(width: 12),
-            // Jauge de maîtrise : rend l'adaptation LISIBLE. Le joueur voit
-            // le bot se caler sur lui.
-            SizedBox(
-              width: 46,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: TweenAnimationBuilder<double>(
-                      tween: Tween<double>(begin: 0, end: maitrise),
-                      duration: const Duration(milliseconds: 400),
-                      builder: (context, valeur, _) => LinearProgressIndicator(
-                        value: valeur,
-                        minHeight: 5,
-                        backgroundColor: Colors.white24,
-                        valueColor: const AlwaysStoppedAnimation(
-                          Color(0xFFFFD54F),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  const Text(
-                    'RYTHME',
-                    style: TextStyle(
-                      color: Colors.white38,
-                      fontSize: 8,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.6,
-                    ),
-                  ),
-                ],
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white12,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Text(
+                '${bot.nombreCartes}',
+                style: const TextStyle(
+                  color: Color(0xFFFFD54F),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
           ],
@@ -954,42 +866,43 @@ class _EcranTableState extends State<EcranTable>
     );
   }
 
-  IconData _iconeHarmonie() {
-    if (!_partie.analyseur.estChauffe) return Icons.visibility;
-    final r = _partie.cerveau.ratioTempo;
-    if (r > 1.02) return Icons.hourglass_bottom;
-    if (r < 0.98) return Icons.bolt;
-    return Icons.sync_alt;
-  }
-
-  /// Délègue au cerveau tempo : source de vérité unique du vocabulaire.
-  String _libelleHarmonie() => _partie.cerveau.libelleRythme;
-
-  Widget _tapis(Size taille) {
-    return Positioned(
-      left: taille.width * 0.1,
-      right: taille.width * 0.1,
-      top: taille.height * 0.14,
-      height: taille.height * 0.55,
-      child: Container(
+  Widget _tapis(Size z) {
+    final r = _rectTapis(z);
+    return Positioned.fromRect(
+      rect: r,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
         decoration: BoxDecoration(
-          // NB : avec un `gradient`, la couleur de base serait écrasée par le
-          // shader. Tous les arrêts sont donc OPAQUES : le tapis ne doit
-          // jamais devenir transparent sur sa périphérie.
-          gradient: const RadialGradient(
-            center: Alignment(0, -0.1),
+          // Arrêts OPAQUES : avec un gradient, la couleur de base serait
+          // écrasée par le shader, le tapis ne doit jamais devenir
+          // transparent sur sa périphérie.
+          gradient: RadialGradient(
+            center: const Alignment(0, -0.1),
             radius: 1.15,
-            colors: [
-              Color(0xFF1A8159), // centre éclairé
-              Color(0xFF0F5C3E), // vert historique du tapis
-              Color(0xFF0A4630), // bord légèrement assombri
-            ],
-            stops: [0.0, 0.62, 1.0],
+            colors: _feuDoublon
+                ? const [
+                    Color(0xFF7A2B2B), // centre rougeâtre (urgence)
+                    Color(0xFF5E1F1F),
+                    Color(0xFF3E1414),
+                  ]
+                : const [
+                    Color(0xFF1A8159),
+                    Color(0xFF0F5C3E),
+                    Color(0xFF0A4630),
+                  ],
+            stops: const [0.0, 0.62, 1.0],
           ),
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: Colors.white24, width: 2),
-          boxShadow: const [
-            BoxShadow(color: Colors.black45, blurRadius: 24, spreadRadius: 2),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: _feuDoublon ? Colors.redAccent : Colors.white24,
+            width: _feuDoublon ? 3 : 2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: _feuDoublon ? Colors.red.withOpacity(0.5) : Colors.black45,
+              blurRadius: _feuDoublon ? 30 : 24,
+              spreadRadius: 2,
+            ),
           ],
         ),
         child: Center(
@@ -998,7 +911,10 @@ class _EcranTableState extends State<EcranTable>
             height: 96,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withOpacity(0.10), width: 2),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.10),
+                width: 2,
+              ),
             ),
             child: Icon(
               Icons.style_outlined,
@@ -1011,93 +927,41 @@ class _EcranTableState extends State<EcranTable>
     );
   }
 
-  Widget _zoneTape(Size taille) {
-    // Bande basse uniquement : ne recouvre PAS le centre du tapis —
-    // la lecture du pli reste dégagée pendant toute la course au tap.
-    return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
-      height: taille.height * 0.26,
+  /// Le carré du tapis ENTIER devient la zone de tap pendant un doublon.
+  /// Voile rougeâtre + main pulsante (aucun mot) ; `opaque` pour capter le
+  /// tap même au-dessus des cartes posées.
+  Widget _overlayTape(Size z) {
+    final r = _rectTapis(z);
+    return Positioned.fromRect(
+      rect: r,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: _partie.humainTape,
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.red.withOpacity(0.0),
-                Colors.red.withOpacity(0.55),
-                Colors.red,
-              ],
-              stops: const [0.0, 0.55, 1.0],
-            ),
-          ),
-          alignment: Alignment.center,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.redAccent,
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: const [
-                BoxShadow(color: Colors.black54, blurRadius: 16),
-              ],
-            ),
-            child: const Text(
-              'DOUBLON — TAPE !',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.5,
-              ),
+            color: Colors.red.withOpacity(0.22),
+            alignment: Alignment.center,
+            child: AnimatedBuilder(
+              animation: _ctrlIndice,
+              builder: (context, _) {
+                final t = _ctrlIndice.value;
+                return Opacity(
+                  opacity: 0.55 + 0.45 * t,
+                  child: Transform.scale(
+                    scale: 0.9 + 0.18 * t,
+                    child: const Icon(
+                      Icons.back_hand,
+                      size: 62,
+                      color: Colors.white,
+                      shadows: [Shadow(color: Colors.black87, blurRadius: 16)],
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _bandeau() {
-    if (_partie.joueurs.isEmpty) return const SizedBox.shrink();
-    String texte;
-    switch (_partie.phase) {
-      case PhasePartie.attenteHumain:
-        texte = 'À toi — swipe ta carte !';
-        break;
-      case PhasePartie.reflexionBot:
-        texte = widget.config.estDuel
-            ? '${_partie.joueurs[_partie.indexCourant].nom} suit ton rythme…'
-            : '${_partie.joueurs[_partie.indexCourant].nom} réfléchit…';
-        break;
-      case PhasePartie.courseTap:
-        texte = 'Qui tape le plus vite ?!';
-        break;
-      case PhasePartie.partieFinie:
-        texte = 'Partie terminée.';
-    }
-    if (_partie.defiActif) {
-      texte += '\nDéfi : ${_partie.joueurs[_partie.indexCourant].nom} doit '
-          'sortir une figure (${_partie.defiChancesRestantes} restantes)';
-    }
-    // En duel, on rend l'harmonie explicite : c'est le cœur de la demande.
-    if (widget.config.estDuel && _partie.phase != PhasePartie.partieFinie) {
-      texte += '\n${_libelleHarmonie()}';
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black45,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      constraints: const BoxConstraints(maxWidth: 260),
-      child: Text(
-        texte,
-        textAlign: TextAlign.center,
-        style: const TextStyle(color: Colors.white70, fontSize: 13),
       ),
     );
   }
