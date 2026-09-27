@@ -962,13 +962,8 @@ class _EcranTableState extends State<EcranTable>
     return Icons.sync_alt;
   }
 
-  String _libelleHarmonie() {
-    if (!_partie.analyseur.estChauffe) return 'Il t’observe…';
-    final r = _partie.cerveau.ratioTempo;
-    if (r > 1.02) return 'Temporise';
-    if (r < 0.98) return 'Accélère avec toi';
-    return 'En phase avec toi';
-  }
+  /// Délègue au cerveau tempo : source de vérité unique du vocabulaire.
+  String _libelleHarmonie() => _partie.cerveau.libelleRythme;
 
   Widget _tapis(Size taille) {
     return Positioned(
