@@ -318,11 +318,18 @@ class CerveauTempo {
         plafondEquiteMs,
       );
 
-  /// Moyenne de la log-normale du bot sur un doublon. La dispersion
-  /// (sigma 0.25) et le plancher physiologique (120 ms) restent appliqués
-  /// côté moteur, conformément à ProfilReflexe du résolveur Python.
-  double get reflexeBotMs =>
-      _interpole(reflexeBotLentMs, reflexeBotVifMs, analyseur.maitrise);
+  /// Moyenne de la log-normale du bot sur un doublon.
+  ///
+  /// C'est le MIROIR du temps de tape mesuré du joueur, pas un réflexe pur
+  /// inventé : les deux grandeurs comparées doivent être homogènes, sinon le
+  /// bot gagne systématiquement dès que le vol de la carte est long.
+  ///
+  /// La dispersion (sigma 0.25) et le plancher physiologique (120 ms) restent
+  /// appliqués côté moteur, conformément à ProfilReflexe du résolveur Python.
+  double get reflexeBotMs {
+    final ratio = _interpole(_ratioTapeLent, _ratioTapeVif, analyseur.maitrise);
+    return analyseur.tempsTapeMs * ratio;
+  }
 
   /// Rend l'harmonie LISIBLE : dit au joueur si le bot le suit, le presse
   /// ou temporise. Affiché dans le bandeau de la table.
