@@ -4,6 +4,8 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import 'rythme.dart';
+
 /// Moteur local : port fidèle des règles canoniques de la Bataille Corse.
 ///
 /// - un joueur pose TOUJOURS sa carte du dessus ;
@@ -19,6 +21,9 @@ import 'package:flutter/foundation.dart';
 ///   joueur à sec ;
 /// - le reste non distribué rejoint le vainqueur du premier pli ;
 /// - victoire : 52 cartes.
+///
+/// LES RÈGLES SONT INCHANGÉES par le mode duel. Seule la cadence de
+/// l'adversaire-machine devient adaptative (voir [AnalyseurRythme]).
 class CarteJeu {
   final String rang; // A,2..9,T,J,Q,K
   final String couleur; // S,H,D,C
@@ -36,12 +41,62 @@ class CarteJeu {
 
 const Map<String, int> kBaremeFigures = {'A': 4, 'K': 3, 'Q': 2, 'J': 1};
 
+/// Nombre de configurations de table proposées.
+enum ModePartie {
+  /// 1 contre 1 : le joueur humain face à un adversaire-machine qui épouse
+  /// son rythme.
+  duel,
+
+  /// Table historique : le joueur humain face à Marc, Julie et Théo,
+  /// chacun avec son temps de réaction fixe.
+  tableQuatre,
+}
+
+/// Configuration d'une partie : mode de table et pseudonymes.
+///
+/// Le moteur ne duplique JAMAIS ses règles selon le mode — il n'y a qu'une
+/// seule implémentation, paramétrée. Le projet s'est déjà brûlé une fois sur
+/// une divergence entre le moteur Python et le port Dart (commits 9af1ebd /
+/// 34e2373) : on ne reproduit pas l'erreur.
+class ConfigPartie {
+  final ModePartie mode;
+  final String nomHumain;
+
+  /// Utilisé uniquement en [ModePartie.duel].
+  final String nomAdversaire;
+
+  const ConfigPartie({
+    this.mode = ModePartie.tableQuatre,
+    this.nomHumain = 'Toi',
+    this.nomAdversaire = 'Marc',
+  });
+
+  /// Le duel, avec l'adversaire-miroir par défaut.
+  const ConfigPartie.duel({String nomAdversaire = 'Marc'})
+      : mode = ModePartie.duel,
+        nomHumain = 'Toi',
+        nomAdversaire = nomAdversaire;
+
+  /// La table historique à 4 joueurs.
+  const ConfigPartie.tableQuatre()
+      : mode = ModePartie.tableQuatre,
+        nomHumain = 'Toi',
+        nomAdversaire = 'Marc';
+
+  int get nombreJoueurs => mode == ModePartie.duel ? 2 : 4;
+
+  bool get estDuel => mode == ModePartie.duel;
+}
+
 class JoueurPartie {
   final String nom;
   final bool estBot;
 
   /// Temps de réaction moyen du bot en ms (loi log-normale autour, comme
   /// ProfilReflexe côté Python : asymétrique à droite, plancher 120 ms).
+  ///
+  /// Ignoré en mode duel : le bot miroir tire alors son réflexe de
+  /// [CerveauTempo], donc du rythme réel du joueur.
   final double reflexeMoyenMs;
 
   /// Index 0 = dessus du tas (prochaine carte jouée).
@@ -72,14 +127,35 @@ class PartieLocale extends ChangeNotifier {
   int _coups = 0;
   static const int _maxCoups = 40000;
 
-  /// Équité de la course de tap : même si un bot "réagit" vite, son
-  /// verdict n'est prononcé qu'à partir de cette fenêtre minimale, pour
-  /// laisser LA CARTE atterrir visuellement avant de clore le doublon.
-  /// Cohérent avec resolveur_tape.py : le chronomètre part du début de
-  /// la dépose (reveal), jamais d'un instant invisible côté table.
+  /// Équité de la course de tap en table à 4 : même si un bot "réagit"
+  /// vite, son verdict n'est prononcé qu'à partir de cette fenêtre
+  /// minimale, pour laisser LA CARTE atterrir visuellement avant de clore
+  /// le doublon. Cohérent avec resolveur_tape.py : le chronomètre part du
+  /// début de la dépose (reveal), jamais d'un instant invisible côté table.
+  ///
+  /// En DUEL cette constante est remplacée par [CerveauTempo.fenetreEquiteMs],
+  /// adaptative : figée, elle rendait la course binaire à deux joueurs
+  /// (soit toujours gagnée, soit toujours perdue).
   static const int _fenetreEquiteMs = 650;
 
+  /// Cadence historique de la table à 4 (ms). En duel, [CerveauTempo]
+  /// prend le relais.
+  static const int _poseBotMinMs = 520;
+  static const int _poseBotAmplitudeMs = 420;
+
+  /// Configuration courante, figée au moment de [nouvellePartie].
+  ConfigPartie config = const ConfigPartie.tableQuatre();
+
+  /// Mesure du rythme du joueur humain. Exposé pour que l'UI affiche
+  /// l'indice de maîtrise (entête) et le tempo de l'adversaire (bandeau).
+  final AnalyseurRythme analyseur = AnalyseurRythme();
+
+  /// Traduit ce rythme en délais concrets pour le bot.
+  late final CerveauTempo cerveau = CerveauTempo(analyseur);
+
   /// Vide avant [nouvellePartie] : l'UI doit tester `.isEmpty`.
+  /// (Piège connu du projet : ne PAS déclarer `late`, sinon crash au
+  /// premier frame, avant la première distribution.)
   List<JoueurPartie> joueurs = [];
   final List<_CartePli> pli = [];
   final List<String> _resteNeutre = [];
@@ -115,17 +191,29 @@ class PartieLocale extends ChangeNotifier {
   // ------------------------------------------------------------------ //
   // Démarrage                                                          //
   // ------------------------------------------------------------------ //
-  void nouvellePartie() {
+  /// Distribue une nouvelle partie selon [configuration].
+  ///
+  /// Sans argument, on retrouve la table historique à 4 joueurs : le
+  /// comportement existant est préservé à l'identique.
+  void nouvellePartie({ConfigPartie? configuration}) {
     _timerBot?.cancel();
     _timerCourseTap?.cancel();
     _coups = 0;
+    config = configuration ?? config;
 
-    joueurs = [
-      JoueurPartie('Toi', estBot: false),
-      JoueurPartie('Marc', estBot: true, reflexeMoyenMs: 265),
-      JoueurPartie('Julie', estBot: true, reflexeMoyenMs: 240),
-      JoueurPartie('Théo', estBot: true, reflexeMoyenMs: 225),
-    ];
+    if (config.estDuel) {
+      joueurs = [
+        JoueurPartie(config.nomHumain, estBot: false),
+        JoueurPartie(config.nomAdversaire, estBot: true),
+      ];
+    } else {
+      joueurs = [
+        JoueurPartie(config.nomHumain, estBot: false),
+        JoueurPartie('Marc', estBot: true, reflexeMoyenMs: 265),
+        JoueurPartie('Julie', estBot: true, reflexeMoyenMs: 240),
+        JoueurPartie('Théo', estBot: true, reflexeMoyenMs: 225),
+      ];
+    }
 
     final paquet = <String>[
       for (final couleur in const ['S', 'H', 'D', 'C'])
@@ -148,8 +236,13 @@ class PartieLocale extends ChangeNotifier {
     defiPoseur = -1;
     defiChancesRestantes = 0;
     dernierVainqueurPli = null;
+    dernierPliRepriseEnJeu = false;
     indexCourant = 0;
     phase = PhasePartie.reflexionBot;
+
+    // Remise à zéro du miroir de rythme : la cadence de l'adversaire se
+    // recalcule à chaque partie, jamais d'une partie à l'autre.
+    analyseur.demarrer();
 
     notifyListeners();
     _programmerTourSuivant();
@@ -159,6 +252,7 @@ class PartieLocale extends ChangeNotifier {
   void dispose() {
     _timerBot?.cancel();
     _timerCourseTap?.cancel();
+    analyseur.arreter();
     super.dispose();
   }
 
@@ -169,6 +263,12 @@ class PartieLocale extends ChangeNotifier {
 
   /// Vraie fin de partie (indépendante des phases de transition).
   bool get estFinie => vainqueurFinal != null || _coups >= _maxCoups;
+
+  /// Le garde-fou anti-boucle a tranché sans vainqueur. En duel c'est un
+  /// cas réel et fréquent (deux tas qui se renvoient indéfiniment les
+  /// cartes) : l'UI doit l'annoncer comme une partie nulle, pas comme un
+  /// « match interrompu » qui se lirait comme un bug.
+  bool get estPartieNulle => vainqueurFinal == null && _coups >= _maxCoups;
 
   bool get auTourDeLHumain =>
       phase == PhasePartie.attenteHumain &&
@@ -199,6 +299,7 @@ class PartieLocale extends ChangeNotifier {
   bool humainTape() {
     if (phase != PhasePartie.courseTap) return false;
     _timerCourseTap?.cancel();
+    analyseur.notifierTapeHumaine(aGagne: true);
     derniereRaisonPli = 'Doublon';
     _attribuerPli(0);
     return true;
@@ -212,6 +313,11 @@ class PartieLocale extends ChangeNotifier {
     final code = j.tas.removeFirst();
     pli.add(_CartePli(code, idx));
     _coups++;
+
+    // La mesure du rythme humain se fait AVANT la notification UI : le
+    // chronomètre de décision s'arrête ici, au moment du geste.
+    if (idx == 0) analyseur.notifierPoseHumaine();
+
     surPose?.call(idx, code, idx == 0);
 
     final carte = CarteJeu.deCode(code);
@@ -259,6 +365,7 @@ class PartieLocale extends ChangeNotifier {
 
   void _ouvrirCourseTap() {
     phase = PhasePartie.courseTap;
+    analyseur.notifierDoublonOuvert();
     notifyListeners();
     surDoublon?.call();
 
@@ -266,8 +373,7 @@ class PartieLocale extends ChangeNotifier {
     // plancher physiologique 120 ms — cf. ProfilReflexe côté Python.
     final tempsParBot = <int, double>{
       for (var i = 0; i < joueurs.length; i++)
-        if (joueurs[i].estBot)
-          i: _tirerTempsReaction(joueurs[i].reflexeMoyenMs),
+        if (joueurs[i].estBot) i: _tirerTempsReaction(_reflexeBot(i)),
     };
     if (tempsParBot.isEmpty) return;
 
@@ -277,16 +383,26 @@ class PartieLocale extends ChangeNotifier {
     }
 
     // Fenêtre d'équité : on ne clôt jamais la course avant que la carte
-    // déposable ait pu être VUE à l'écran (voir _fenetreEquiteMs).
-    final delai =
-        max(meilleur.value.round(), _fenetreEquiteMs);
+    // déposable ait pu être VUE à l'écran. En duel elle suit le tempo du
+    // joueur au lieu d'être figée à 650 ms.
+    final fenetre = config.estDuel ? cerveau.fenetreEquiteMs : _fenetreEquiteMs;
+    final delai = max(meilleur.value.round(), fenetre);
 
     _timerCourseTap = Timer(Duration(milliseconds: delai), () {
       if (phase == PhasePartie.courseTap) {
+        // Le joueur a vu le doublon sans réussir à taper en premier :
+        // l'échec compte dans son indice de maîtrise.
+        analyseur.notifierTapeHumaine(aGagne: false);
         _attribuerPli(meilleur.key);
       }
     });
   }
+
+  /// Réflexe de tap du bot. En duel il est dérivé du rythme réel du
+  /// joueur (miroir) ; en table à 4, on conserve les profils fixes
+  /// historiques Marc 265 / Julie 240 / Théo 225.
+  double _reflexeBot(int index) =>
+      config.estDuel ? cerveau.reflexeBotMs : joueurs[index].reflexeMoyenMs;
 
   double _gaussienne() {
     final u1 = max(_rng.nextDouble(), 1e-9);
@@ -318,6 +434,7 @@ class PartieLocale extends ChangeNotifier {
         joueurs.any((j) => j.nombreCartes == 52) ||
         _coups >= _maxCoups; // garde-fou anti-boucle infinie
     phase = fini ? PhasePartie.partieFinie : PhasePartie.reflexionBot;
+    if (fini) analyseur.arreter();
 
     notifyListeners();
     surPliRamasse?.call(gagnant, nbCartesDernierPli);
@@ -334,12 +451,21 @@ class PartieLocale extends ChangeNotifier {
     final courant = joueurs[indexCourant];
     if (!courant.estBot) {
       phase = PhasePartie.attenteHumain;
+      // Le chrono de décision du joueur démarre ICI : c'est la seule mesure
+      // propre du rythme humain, indépendante de la vitesse du bot.
+      analyseur.notifierMainHumaine();
       notifyListeners();
       return;
     }
 
     phase = PhasePartie.reflexionBot;
-    final delai = 520 + _rng.nextInt(420); // rythme de table crédible
+
+    // En duel, le bot n'a pas de cadence propre : il épouse celle du joueur
+    // (voir CerveauTempo). En table à 4, rythme historique inchangé.
+    final delai = config.estDuel
+        ? cerveau.delaiPoseMs
+        : _poseBotMinMs + _rng.nextInt(_poseBotAmplitudeMs);
+
     _timerBot = Timer(Duration(milliseconds: delai), () {
       if (phase != PhasePartie.reflexionBot) return;
       if (joueurs[indexCourant].estBot) _poserCarte(indexCourant);
@@ -349,6 +475,11 @@ class PartieLocale extends ChangeNotifier {
 
   // Confort UI -------------------------------------------------------
   JoueurPartie get humain => joueurs.first;
+
+  /// L'adversaire-machine. En duel c'est `joueurs[1]` ; en table à 4, le
+  /// premier bot (Marc) — utilisé pour l'affichage de l'harmonie.
+  JoueurPartie get adversaire =>
+      joueurs.firstWhere((j) => j.estBot, orElse: () => joueurs.last);
 
   JoueurPartie? get vainqueurFinal {
     for (final j in joueurs) {
