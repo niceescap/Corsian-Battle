@@ -72,10 +72,9 @@ class ConfigPartie {
   });
 
   /// Le duel, avec l'adversaire-miroir par défaut.
-  const ConfigPartie.duel({String nomAdversaire = 'Marc'})
+  const ConfigPartie.duel({this.nomAdversaire = 'Marc'})
       : mode = ModePartie.duel,
-        nomHumain = 'Toi',
-        nomAdversaire = nomAdversaire;
+        nomHumain = 'Toi';
 
   /// La table historique à 4 joueurs.
   const ConfigPartie.tableQuatre()
