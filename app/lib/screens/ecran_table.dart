@@ -965,12 +965,15 @@ class _EcranTableState extends State<EcranTable>
       height: taille.height * 0.55,
       child: Container(
         decoration: BoxDecoration(
-          gradient: const RadialGradient(
-            center: Alignment(0, -0.1),
-            radius: 1.1,
-            colors: [Color(0xFF17785200), Color(0xFF00000000)],
-          ),
           color: const Color(0xFF0F5C3E),
+          gradient: RadialGradient(
+            center: const Alignment(0, -0.1),
+            radius: 1.1,
+            colors: [
+              const Color(0xFF1B8A5C).withOpacity(0.85),
+              const Color(0xFF0F5C3E).withOpacity(0.0),
+            ],
+          ),
           borderRadius: BorderRadius.circular(28),
           border: Border.all(color: Colors.white24, width: 2),
           boxShadow: const [
