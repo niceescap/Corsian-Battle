@@ -332,7 +332,12 @@ class CerveauTempo {
   }
 
   /// Rend l'harmonie LISIBLE : dit au joueur si le bot le suit, le presse
-  /// ou temporise. Affiché dans le bandeau de la table.
+  /// ou temporise.
+  ///
+  /// Source de vérité unique du libellé — utilisé à la fois par le panneau
+  /// de l'adversaire et par le bandeau de la table. L'UI ne reformule pas :
+  /// c'est le cerveau tempo qui connaît le rapport, donc c'est lui qui le
+  /// qualifie.
   String get libelleRythme {
     if (!analyseur.estChauffe) return 'Il t’observe…';
     final r = ratioTempo;
