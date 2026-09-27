@@ -70,7 +70,7 @@ class PopupScore extends StatelessWidget {
 
     return IgnorePointer(
       child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0, end: 1),
+        tween: Tween<double>(begin: 0, end: 1),
         duration: const Duration(milliseconds: kDureeMaxEffetMs),
         curve: Curves.easeOutCubic,
         builder: (context, t, enfant) {
