@@ -518,7 +518,7 @@ class _EcranTableState extends State<EcranTable>
   Offset _origineJoueur(int indexJoueur, Size z) {
     if (indexJoueur == 0) {
       // Centre du paquet du joueur, en bas de la zone.
-      return Offset(z.width / 2 - 32, z.height - 40);
+      return Offset(z.width / 2, z.height - 40);
     }
     final nAdversaires = _partie.joueurs.length - 1;
     final rang = indexJoueur - 1;
