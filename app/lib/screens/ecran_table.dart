@@ -657,7 +657,11 @@ class _EcranTableState extends State<EcranTable>
             top: c.position.dy - kHauteurCarteTapis / 2,
             child: Transform.rotate(
               angle: c.rotation,
-              child: CarteWidget(code: c.code, largeur: 64, hauteur: 90),
+              child: CarteWidget(
+                code: c.code,
+                largeur: kLargeurCarteTapis,
+                hauteur: kHauteurCarteTapis,
+              ),
             ),
           ),
 
@@ -674,7 +678,11 @@ class _EcranTableState extends State<EcranTable>
                   opacity: 1 - 0.7 * t,
                   child: Transform.rotate(
                     angle: c.rotation * (1 - t),
-                    child: CarteWidget(code: c.code, largeur: 64, hauteur: 90),
+                    child: CarteWidget(
+                code: c.code,
+                largeur: kLargeurCarteTapis,
+                hauteur: kHauteurCarteTapis,
+              ),
                   ),
                 ),
               );
