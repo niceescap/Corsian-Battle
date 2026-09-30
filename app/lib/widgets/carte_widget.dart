@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 
+/// Dimensions des cartes révélées sur le tapis : 25 % de plus que 64×90,
+/// en conservant exactement le ratio actuel.
+const double kLargeurCarteTapis = 80;
+const double kHauteurCarteTapis = 112.5;
+
 /// Représente visuellement une carte.
 /// [code] au format poker (ex: "AH", "KC", "TH", "9S", "7D") — voir
 /// cartes.py côté moteur, qui génère exactement ce même code. Si [code]

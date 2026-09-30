@@ -518,7 +518,7 @@ class _EcranTableState extends State<EcranTable>
   Offset _origineJoueur(int indexJoueur, Size z) {
     if (indexJoueur == 0) {
       // Centre du paquet du joueur, en bas de la zone.
-      return Offset(z.width / 2 - 32, z.height - 40);
+      return Offset(z.width / 2, z.height - 40);
     }
     final nAdversaires = _partie.joueurs.length - 1;
     final rang = indexJoueur - 1;
@@ -533,7 +533,7 @@ class _EcranTableState extends State<EcranTable>
     final rad = angleDeg * pi / 180;
     final x = z.width / 2 + z.width * 0.30 * sin(rad);
     final y = z.height * 0.035 + 8 - 8 * cos(rad);
-    return Offset(x - 24, y);
+    return Offset(x, y);
   }
 
   // ------------------------------------------------------------------ //
@@ -653,11 +653,15 @@ class _EcranTableState extends State<EcranTable>
         // Pli visible au centre du tapis.
         for (final c in _pliVisible)
           Positioned(
-            left: c.position.dx - 32,
-            top: c.position.dy - 45,
+            left: c.position.dx - kLargeurCarteTapis / 2,
+            top: c.position.dy - kHauteurCarteTapis / 2,
             child: Transform.rotate(
               angle: c.rotation,
-              child: CarteWidget(code: c.code, largeur: 64, hauteur: 90),
+              child: CarteWidget(
+                code: c.code,
+                largeur: kLargeurCarteTapis,
+                hauteur: kHauteurCarteTapis,
+              ),
             ),
           ),
 
@@ -668,13 +672,17 @@ class _EcranTableState extends State<EcranTable>
               final t = Curves.easeIn.transform(_ctrlRamasse.value);
               final p = Offset.lerp(c.position, _ramassage!.arrivee, t)!;
               return Positioned(
-                left: p.dx - 32,
-                top: p.dy - 45,
+                left: p.dx - kLargeurCarteTapis / 2,
+                top: p.dy - kHauteurCarteTapis / 2,
                 child: Opacity(
                   opacity: 1 - 0.7 * t,
                   child: Transform.rotate(
                     angle: c.rotation * (1 - t),
-                    child: CarteWidget(code: c.code, largeur: 64, hauteur: 90),
+                    child: CarteWidget(
+                      code: c.code,
+                      largeur: kLargeurCarteTapis,
+                      hauteur: kHauteurCarteTapis,
+                    ),
                   ),
                 ),
               );

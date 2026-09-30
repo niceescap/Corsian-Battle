@@ -87,9 +87,13 @@ class _CarteVolanteState extends State<CarteVolante>
       animation: _controleur,
       builder: (context, _) {
         final estRetournee = _retournement.value > pi / 2;
+        // `depart` et `arrivee` désignent le CENTRE de la carte, comme
+        // `_CarteCentre.position` dans EcranTable. On calcule donc le coin
+        // haut-gauche à partir des dimensions du tapis : aucun saut à
+        // l'atterrissage malgré le format agrandi.
         return Positioned(
-          left: _position.value.dx,
-          top: _position.value.dy,
+          left: _position.value.dx - kLargeurCarteTapis / 2,
+          top: _position.value.dy - kHauteurCarteTapis / 2,
           child: Transform(
             alignment: Alignment.center,
             transform: Matrix4.identity()
@@ -98,8 +102,8 @@ class _CarteVolanteState extends State<CarteVolante>
               ..rotateZ(_tourbillon.value),
             child: CarteWidget(
               code: estRetournee ? widget.codeCarte : null,
-              largeur: 64,
-              hauteur: 90,
+              largeur: kLargeurCarteTapis,
+              hauteur: kHauteurCarteTapis,
             ),
           ),
         );
