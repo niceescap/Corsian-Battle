@@ -672,8 +672,8 @@ class _EcranTableState extends State<EcranTable>
               final t = Curves.easeIn.transform(_ctrlRamasse.value);
               final p = Offset.lerp(c.position, _ramassage!.arrivee, t)!;
               return Positioned(
-                left: p.dx - 32,
-                top: p.dy - 45,
+                left: p.dx - kLargeurCarteTapis / 2,
+                top: p.dy - kHauteurCarteTapis / 2,
                 child: Opacity(
                   opacity: 1 - 0.7 * t,
                   child: Transform.rotate(
