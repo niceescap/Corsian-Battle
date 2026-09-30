@@ -533,7 +533,7 @@ class _EcranTableState extends State<EcranTable>
     final rad = angleDeg * pi / 180;
     final x = z.width / 2 + z.width * 0.30 * sin(rad);
     final y = z.height * 0.035 + 8 - 8 * cos(rad);
-    return Offset(x - 24, y);
+    return Offset(x, y);
   }
 
   // ------------------------------------------------------------------ //
