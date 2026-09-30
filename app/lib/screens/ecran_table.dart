@@ -679,10 +679,10 @@ class _EcranTableState extends State<EcranTable>
                   child: Transform.rotate(
                     angle: c.rotation * (1 - t),
                     child: CarteWidget(
-                code: c.code,
-                largeur: kLargeurCarteTapis,
-                hauteur: kHauteurCarteTapis,
-              ),
+                      code: c.code,
+                      largeur: kLargeurCarteTapis,
+                      hauteur: kHauteurCarteTapis,
+                    ),
                   ),
                 ),
               );
