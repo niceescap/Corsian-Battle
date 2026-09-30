@@ -102,8 +102,8 @@ class _CarteVolanteState extends State<CarteVolante>
               ..rotateZ(_tourbillon.value),
             child: CarteWidget(
               code: estRetournee ? widget.codeCarte : null,
-              largeur: 64,
-              hauteur: 90,
+              largeur: kLargeurCarteTapis,
+              hauteur: kHauteurCarteTapis,
             ),
           ),
         );
