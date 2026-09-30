@@ -653,8 +653,8 @@ class _EcranTableState extends State<EcranTable>
         // Pli visible au centre du tapis.
         for (final c in _pliVisible)
           Positioned(
-            left: c.position.dx - 32,
-            top: c.position.dy - 45,
+            left: c.position.dx - kLargeurCarteTapis / 2,
+            top: c.position.dy - kHauteurCarteTapis / 2,
             child: Transform.rotate(
               angle: c.rotation,
               child: CarteWidget(code: c.code, largeur: 64, hauteur: 90),
