@@ -241,13 +241,21 @@ async def _diffuser(
 
 
 async def _instantane_par_siege(table: Table, seq: int) -> None:
-    """`table_etat` **filtré** : chaque siège reçoit sa propre copie."""
+    """`table_etat` **filtré** : chaque siège reçoit sa propre copie.
+
+    Les champs de partie (pli, reste neutre, tour, défi) viennent de la partie
+    en cours s'il y en a une ; sinon l'instantané reste celui d'une table en
+    attente. Le client n'a donc qu'un seul contrat, avant et après le
+    lancement (`docs/PROTOCOLE.md` §6).
+    """
+    complement = table.partie.etat_public() if table.partie is not None else {}
     for siege in table.sieges:
         if siege.websocket is None:
             continue
+        donnees = table.instantane(siege.numero)
+        donnees.update(complement)
         await _envoyer(
-            siege.websocket,
-            {"type": "table_etat", "seq": seq, "d": table.instantane(siege.numero)},
+            siege.websocket, {"type": "table_etat", "seq": seq, "d": donnees}
         )
 
 
