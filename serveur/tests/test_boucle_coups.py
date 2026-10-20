@@ -92,10 +92,23 @@ class Collecteur:
 
 
 def _table(type_partie: str = "duel", occupes=((0, "j1", "Nina"), (1, "j2", "Marc"))) -> Table:
+    """Table prête à jouer, avec les sièges **exactement** là où on les veut.
+
+    `GestionnaireTables.creer()` place toujours le créateur au siège 0 : on
+    remet donc tous les sièges à plat avant d'appliquer `occupes`. C'est ce qui
+    permet de tester la traduction index moteur → numéro de siège sur une table
+    de 4 dont les sièges 0 et 3 sont vides.
+    """
     gestionnaire = GestionnaireTables()
     table, _ = gestionnaire.creer(type_partie, occupes[0][1], occupes[0][2])
-    for numero, joueur_id, pseudo in occupes[1:]:
+    for siege in table.sieges:
+        siege.joueur_id = None
+        siege.pseudo = None
+        siege.present = False
+        siege.pret = False
+    for numero, joueur_id, pseudo in occupes:
         siege = table.siege(numero)
+        assert siege is not None, f"siège {numero} inexistant pour {type_partie}"
         siege.joueur_id = joueur_id
         siege.pseudo = pseudo
         siege.present = True
