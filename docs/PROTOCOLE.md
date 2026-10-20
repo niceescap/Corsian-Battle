@@ -221,16 +221,53 @@ champ `suivant` saute automatiquement les sièges vides, comme le fait déjà
 
 ### 10.1 Séquence
 
+Le moteur résout le doublon **pendant** `jouer_un_coup()` : il n'y a pas de
+place pour une attente réseau à l'intérieur du coup. Le serveur **prédit** donc
+le doublon avant de jouer (il connaît le sommet du pli et la carte du dessus du
+joueur dont c'est le tour), ouvre la fenêtre, puis joue avec un résolveur déjà
+nourri des délais reçus.
+
 ```
-t0   serveur : jouer_un_coup() détecte _est_doublon()
-t0   serveur ─► doublon_ouvert {fenetre_ms: 900, cartes:["7C","7H"]}   à TOUS les sièges
-                (y compris les joueurs sans carte : ils peuvent taper pour revenir en jeu)
+t0   serveur : prédit le doublon (sommet du pli + carte du dessus du joueur)
+t0   serveur ─► doublon_ouvert {fenetre_ms: 900, plancher_ms: 120, cartes:["7C","7H"]}
+                à TOUS les sièges — y compris les joueurs sans carte, qui
+                peuvent taper pour revenir en jeu
 t0   chaque client démarre son chronomètre au début du rendu de l'animation
 t1   client ─► tape {delai_ms: 214}
-t2   fenêtre close à t0 + 900 ms (côté serveur)
-t3   serveur ─► doublon_resolu {gagnant:2, delai_ms_gagnant:214, personne:false}
+t2   fenêtre close à t0 + 900 ms, ou dès que tous les sièges connectés ont répondu
+t3   serveur : jouer_un_coup() avec le résolveur nourri
+t3   serveur ─► carte_posee {siege:3, carte:"7H", annonce:true, …}
+t3   serveur ─► doublon_resolu {gagnant:2, delai_ms_gagnant:214, personne:false, nb_tapes:3}
 t3   serveur ─► pli_gagne {gagnant:2, raison:"doublon", nb_cartes:9, reste_neutre_inclus:true}
 ```
+
+**Deux conséquences pour le client** :
+
+1. Pour la carte qui fait le doublon, `doublon_ouvert` arrive **avant**
+   `carte_posee`. C'est `doublon_ouvert.cartes[1]` qui doit déclencher
+   l'animation de la carte et le chronomètre.
+2. Le `carte_posee` qui suit porte **`annonce: true`** : il ne faut **pas**
+   rejouer l'animation, seulement mettre à jour l'état (tour, défi, taille du
+   pli). Sans ce marquage, la carte serait animée deux fois.
+
+Le chronomètre part donc au rendu de `doublon_ouvert` : c'est pourquoi
+`proxy_buffering off` sur le WebSocket est une condition d'**équité** et non de
+confort (`DEPLOIEMENT.md` §5.2).
+
+### 10.1bis Sémantique de `pli_gagne.raison`
+
+Deux valeurs, à ne pas confondre — l'ambiguïté a été relevée en recette du lot A :
+
+| `raison` | Qui empoche le pli | Quand |
+|---|---|---|
+| `doublon` | **Celui qui a tapé le premier**, quel que soit son siège — y compris un joueur qui n'a plus de carte, qui revient ainsi en jeu | Une fenêtre de tape a abouti |
+| `defi_manque` | **Le dernier poseur de figure** | Le répondeur a épuisé ses chances (ou n'a plus de carte) sans sortir de figure |
+
+Les deux peuvent tomber sur le **même coup** : un joueur pose une carte qui
+fait doublon, personne ne tape, et cette même carte épuisait la dernière chance
+du défi. Le serveur émet alors `doublon_non_tape` **puis** `pli_gagne` avec
+`raison: "defi_manque"` — le pli vient du défi, pas de la tape. Un client qui
+afficherait « gagné par la tape » sur ce coup raconterait une fausse règle.
 
 ### 10.2 Règles de validité d'un `tape`
 
