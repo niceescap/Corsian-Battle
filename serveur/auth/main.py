@@ -205,12 +205,22 @@ def _session_valide(
     return {"session": session, "joueur": joueur}
 
 
-def _paire_jetons(joueur: Dict[str, Any], appareil_id: Optional[str], ip: str) -> Dict[str, Any]:
-    """Crée une session de refresh et émet les deux jetons (à appeler dans une
-    connexion déjà ouverte)."""
+def _paire_jetons(
+    conn: sqlite3.Connection,
+    joueur: Dict[str, Any],
+    appareil_id: Optional[str],
+    ip: str,
+) -> Dict[str, Any]:
+    """Crée une session de refresh et émet les deux jetons.
+
+    La connexion est **passée explicitement** : les routes s'exécutent dans le
+    pool de threads de FastAPI, donc toute variable de module servant à
+    transporter un état par requête serait une course garantie entre deux
+    appels simultanés.
+    """
     jeton_refresh, empreinte_refresh = jetons.emettre_refresh()
     bd.creer_session_refresh(
-        conn=_etat["conn"],
+        conn=conn,
         session_id=uuid.uuid4().hex,
         joueur_id=joueur["id"],
         empreinte=empreinte_refresh,
