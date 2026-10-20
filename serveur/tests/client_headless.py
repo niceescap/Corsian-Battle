@@ -230,7 +230,10 @@ class Joueur:
 # ---------------------------------------------------------------------------
 async def une_partie(args: argparse.Namespace, numero: int) -> Dict[str, Any]:
     type_partie = "duel" if args.joueurs == 2 else "table_quatre"
-    comptes = [creer_compte(args.auth, i, args.sans_auth) for i in range(args.joueurs)]
+    comptes = [
+        creer_compte(args.auth, i, args.sans_auth, args.reutiliser_comptes)
+        for i in range(args.joueurs)
+    ]
     jetons = [compte.get("jeton_acces", "") for compte in comptes]
 
     code = creer_table(args.jeu, jetons[0], type_partie)
@@ -239,10 +242,12 @@ async def une_partie(args: argparse.Namespace, numero: int) -> Dict[str, Any]:
 
     print(
         f"\n— Partie {numero} · table {code} · {args.joueurs} joueurs · "
-        f"{url_ws(args.jeu)}",
+        f"{url_ws(args.jeu)}"
+        f"{' · comptes réutilisés' if args.reutiliser_comptes else ''}"
+        f"{' · rapide' if args.rapide else ''}",
         flush=True,
     )
-    joueurs = [Joueur(compte, args.verbeux) for compte in comptes]
+    joueurs = [Joueur(compte, args.verbeux, args.rapide) for compte in comptes]
     debut = time.time()
     resultats = await asyncio.gather(
         *[joueur.session(url_ws(args.jeu), code) for joueur in joueurs],
