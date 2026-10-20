@@ -599,11 +599,15 @@ async def websocket_jeu(websocket: WebSocket) -> None:
         siege.deconnecte_le = time.time()
         if table.etat == "attente":
             tables.quitter(table.code, joueur_id)
-            await _diffuser(
-                table,
-                {"type": "joueur_parti", "seq": table.prochain_seq(),
-                 "d": {"siege": siege.numero, "remplace_par_bot": False}},
-            )
+        # Les autres doivent voir le siège se vider, en attente comme en jeu.
+        # En `en_jeu` le siège n'est PAS libéré : le joueur peut se reconnecter
+        # et le récupérer, et le délai de tour fait avancer la partie en son
+        # absence. Le lot C ajoutera le bot de remplacement après 30 s.
+        await _diffuser(
+            table,
+            {"type": "joueur_parti", "seq": table.prochain_seq(),
+             "d": {"siege": siege.numero, "remplace_par_bot": False}},
+        )
         journal.info("WS fermé · table=%s siège=%d", table.code, siege.numero)
 
 
