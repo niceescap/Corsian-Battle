@@ -349,9 +349,12 @@ def invite(corps: InviteRequete, request: Request) -> JSONResponse:
             bd.touch_joueur(conn, joueur["id"])
             if joueur.get("appareil_id"):
                 bd.touch_appareil(conn, joueur["appareil_id"], corps.version_app)
-            jetons_emis = _paire_jetons(joueur, joueur.get("appareil_id"), _ip(request))
+            jetons_emis = _paire_jetons(
+                conn, joueur, joueur.get("appareil_id"), _ip(request)
+            )
         finally:
-            _etat.pop("conn", None)
+            # Purge paresseuse des clés de débit vides : le dictionnaire reste borné.
+            _limiteurs["invite"].nettoyer()
 
     return JSONResponse(
         {
