@@ -354,11 +354,13 @@ S ─► {"type":"carte_posee","seq":42,"d":{"siege":2,"carte":"KH","pli":2,"sui
                                           "defi":{"poseur":2,"repondeur":3,"chances_restantes":3},
                                           "auto":false}}
 S ─► {"type":"defi_ouvert","seq":43,"d":{"poseur":2,"repondeur":3,"chances":3}}
-S ─► {"type":"carte_posee","seq":44,"d":{"siege":3,"carte":"KD","pli":3,"suivant":0,"defi":null,
-                                          "auto":false}}
-S ─► {"type":"doublon_ouvert","seq":45,"d":{"fenetre_ms":900,"cartes":["KH","KD"]}}
-C ─► {"type":"tape","seq_attendu":45,"d":{"delai_ms":214}}
-S ─► {"type":"doublon_resolu","seq":46,"d":{"gagnant":2,"delai_ms_gagnant":214,"personne":false}}
+S ─► {"type":"doublon_ouvert","seq":44,"d":{"fenetre_ms":900,"plancher_ms":120,
+                                            "cartes":["KH","KD"]}}
+C ─► {"type":"tape","seq_attendu":44,"d":{"delai_ms":214}}
+S ─► {"type":"carte_posee","seq":45,"d":{"siege":3,"carte":"KD","pli":3,"suivant":0,
+                                          "defi":null,"auto":false,"annonce":true}}
+S ─► {"type":"doublon_resolu","seq":46,"d":{"gagnant":2,"delai_ms_gagnant":214,
+                                            "personne":false,"nb_tapes":3}}
 S ─► {"type":"pli_gagne","seq":47,"d":{"gagnant":2,"nb_cartes":3,"raison":"doublon",
                                         "reste_neutre_inclus":false}}
 S ─► {"type":"ta_carte_suivante","seq":47,"d":{"carte":"9S"}}
