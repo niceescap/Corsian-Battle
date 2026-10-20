@@ -329,3 +329,77 @@ def purger_sessions_expirees(conn: sqlite3.Connection) -> int:
             "DELETE FROM sessions_refresh WHERE expire_le < ?", (maintenant_iso(),)
         )
         return curseur.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Parties terminées (écrites par corsian-jeu uniquement)
+# ---------------------------------------------------------------------------
+def creer_partie(
+    conn: sqlite3.Connection,
+    partie_id: str,
+    code_table: str,
+    type_partie: str,
+    cree_le: str,
+    seed: int,
+    terminee_le: Optional[str] = None,
+    gagnant_id: Optional[str] = None,
+    raison_fin: Optional[str] = None,
+    nb_coups: Optional[int] = None,
+    nb_doublons: Optional[int] = None,
+    duree_ms: Optional[int] = None,
+    recit_json: Optional[str] = None,
+) -> None:
+    with conn:
+        conn.execute(
+            "INSERT INTO parties(id, code_table, type, cree_le, terminee_le, gagnant_id, "
+            "                     raison_fin, nb_coups, nb_doublons, duree_ms, seed, recit_json) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                partie_id, code_table, type_partie, cree_le, terminee_le, gagnant_id,
+                raison_fin, nb_coups, nb_doublons, duree_ms, seed, recit_json,
+            ),
+        )
+
+
+def creer_participation(
+    conn: sqlite3.Connection,
+    partie_id: str,
+    siege: int,
+    joueur_id: Optional[str] = None,
+    pseudo_affiche: Optional[str] = None,
+    est_bot: bool = False,
+    remplace_en_cours: bool = False,
+    nb_cartes_final: Optional[int] = None,
+    doublons_gagnes: int = 0,
+    doublons_perdus: int = 0,
+    tapes_manquees: int = 0,
+    delai_tape_median_ms: Optional[float] = None,
+) -> None:
+    with conn:
+        conn.execute(
+            "INSERT INTO participations(partie_id, joueur_id, siege, pseudo_affiche, est_bot, "
+            "    remplace_en_cours, nb_cartes_final, doublons_gagnes, doublons_perdus, "
+            "    tapes_manquees, delai_tape_median_ms) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                partie_id, joueur_id, siege, pseudo_affiche, 1 if est_bot else 0,
+                1 if remplace_en_cours else 0, nb_cartes_final, doublons_gagnes,
+                doublons_perdus, tapes_manquees, delai_tape_median_ms,
+            ),
+        )
+
+
+def enregistrer_suspicion(
+    conn: sqlite3.Connection,
+    suspicion_id: str,
+    joueur_id: str,
+    type_suspicion: str,
+    partie_id: Optional[str] = None,
+    valeur_ms: Optional[int] = None,
+) -> None:
+    with conn:
+        conn.execute(
+            "INSERT INTO suspicions(id, joueur_id, partie_id, type, valeur_ms) "
+            "VALUES(?, ?, ?, ?, ?)",
+            (suspicion_id, joueur_id, partie_id, type_suspicion, valeur_ms),
+        )
