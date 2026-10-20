@@ -70,11 +70,15 @@ async def _entretien_periodique() -> None:
     while True:
         await asyncio.sleep(60)
         try:
+            abandonnees = await _cloturer_tables_abandonnees()
             fermees = tables.nettoyer()
             _limiteur_ws.nettoyer()
             _limiteur_rest.nettoyer()
-            if fermees:
-                journal.info("Entretien : %d table(s) fermée(s), %d active(s)", fermees, tables.actives())
+            if fermees or abandonnees:
+                journal.info(
+                    "Entretien : %d table(s) fermée(s), %d partie(s) close(s), %d active(s)",
+                    fermees, abandonnees, tables.actives(),
+                )
         except Exception:
             journal.exception("Entretien périodique en échec")
 
