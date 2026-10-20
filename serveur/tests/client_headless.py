@@ -315,6 +315,15 @@ def lire_arguments() -> argparse.Namespace:
     analyseur.add_argument("--verbeux", action="store_true", help="imprime chaque message")
     analyseur.add_argument("--sans-auth", action="store_true",
                            help="serveur démarré avec MODE_SANS_AUTH=1 : jetons factices")
+    analyseur.add_argument("--reutiliser-comptes", action="store_true",
+                           help="uuid_appareil fixes : /invite est idempotent, aucun compte "
+                                "créé après le premier passage (indispensable pour enchaîner "
+                                "les parties sans buter sur la limite de 5 créations/h/IP)")
+    analyseur.add_argument("--rapide", action="store_true",
+                           help="supprime les temporisations de confort : les coups et les "
+                                "tapes partent aussitôt (recettes de charge). Les délais de "
+                                "tape annoncés restent plausibles, ce sont eux que le serveur "
+                                "compare")
     return analyseur.parse_args()
 
 
