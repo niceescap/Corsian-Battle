@@ -312,7 +312,6 @@ def invite(corps: InviteRequete, request: Request) -> JSONResponse:
         raise ErreurApi(code or "pseudo_interdit", filtre.message_erreur(code), 422)
 
     with bd.connexion(cfg.base_chemin) as conn:
-        _etat["conn"] = conn
         try:
             existant = bd.joueur_par_appareil(conn, corps.uuid_appareil)
             if existant is not None:
