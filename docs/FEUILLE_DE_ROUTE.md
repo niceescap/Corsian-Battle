@@ -26,8 +26,9 @@
 
 **Livrables** : squelettes `corsian-auth` (8111) et `corsian-jeu` (8112) avec `/sante` et
 `/config`, création de la base et application de la migration `001_initial.sql`, units systemd,
-blocs nginx API + complément du bloc WS, pages statiques `privacy.html`, `terms.html`,
-`suppression-compte.html` (coquille), `index.html` (selon ce qui existe déjà).
+blocs nginx API + `proxy_buffering off` sur le WS existant, pages statiques **nouvelles**
+`privacy.html`, `terms.html`, `suppression-compte.html` (coquille), `support.html`. La landing
+`index.html` (15 Ko) et son dossier `static/` ne sont **pas touchés**.
 
 **Critères d'acceptation**
 
@@ -36,11 +37,14 @@ blocs nginx API + complément du bloc WS, pages statiques `privacy.html`, `terms
 - [ ] `curl -i https://soft.opik.net/corsian-battle/api/jeu/sante` → `200`
 - [ ] `curl -i -N -H "Connection: Upgrade" …/corsian-battle/ws` → **`101 Switching Protocols`**
 - [ ] `https://soft.opik.net/corsian-battle/privacy.html` s'affiche sans compte ni application
+- [ ] `https://soft.opik.net/corsian-battle/` affiche toujours la landing existante, logos inclus
+      (empreinte SHA-256 de `index.html` identique avant/après dépôt)
 - [ ] `free -m` après 30 min : les deux services restent sous leur `MemoryMax`, swap stable
 - [ ] `systemctl restart corsian-jeu` → redémarrage propre, `/sante` de nouveau `ok` en < 5 s
 
-**Répartition** : Nicolas — `ls -la` de la racine statique, blocs nginx, `nginx -t`, units
-systemd, démarrage. Assistant — code des squelettes, migrations, pages statiques, recette.
+**Répartition** : Nicolas — deux blocs `location` API, `proxy_buffering off` sur le WS,
+`nginx -t`, units systemd, démarrage. Assistant — code des squelettes, migrations, pages
+statiques nouvelles, recette.
 
 ## S1 — Identité
 
