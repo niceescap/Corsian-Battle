@@ -191,12 +191,18 @@ location ^~ /corsian-battle/ws {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_read_timeout  3600s;
     proxy_send_timeout  3600s;
-    proxy_buffering     off;
+    proxy_buffering     off;          # ← SEULE LIGNE À AJOUTER
 }
 ```
 
-Sans `proxy_read_timeout` long, nginx coupe à 60 s ; sans `proxy_buffering off`, les messages
-peuvent arriver par paquets et casser le rythme du doublon.
+Pourquoi cette ligne est indispensable ici : avec le buffering actif, nginx agrège les trames
+et le client reçoit `carte_posee` puis `doublon_ouvert` en un seul paquet. Or le chronomètre de
+tape démarre **au rendu** côté client (`PROTOCOLE.md` §10.1) : un rendu groupé retarde ce départ
+et comprime artificiellement les délais comparés entre joueurs. Le flux doit arriver au fil de
+l'eau.
+
+`proxy_read_timeout 3600s` (déjà présent) évite quant à lui la coupure nginx à 60 s sur une
+table inactive — sans lui, un joueur qui réfléchit perdrait son socket.
 
 ### 5.3 Vérification
 
