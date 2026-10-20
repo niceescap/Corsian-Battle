@@ -219,10 +219,19 @@ timecode son propre écart reveal → appui, le résolveur choisit le délai le 
      tas de chaque joueur) pour déduire l'événement — zéro modification du moteur ;
    - ajout d'un crochet optionnel `observateur` dans `moteur.py` — plus lisible, mais touche
      au fichier source de vérité.
-3. **Sérialisation / instantané** — projection de l'état d'une `BatailleCorse` en dictionnaire
+3. **« Personne n'a tapé »** — en ligne, un doublon peut passer sans qu'aucun joueur ne tape :
+   le pli ne doit alors être attribué à personne et le jeu continue. L'interface
+   `ResolveurTape.determiner_gagnant()` doit donc être autorisée à renvoyer `None`, et
+   `_resoudre_doublon()` à rendre la main sans attribuer le pli. `ResolveurSimulationBots` ne
+   renvoie jamais `None` : `demo.py` et toutes les simulations existantes gardent un
+   comportement strictement identique. Détail du traitement : `PROTOCOLE.md` §10.3.
+4. **Sérialisation / instantané** — projection de l'état d'une `BatailleCorse` en dictionnaire
    JSON, **filtrée par destinataire** (§8.3), plus un instantané reconstructible pour la reprise
    après redémarrage (`seed` + liste ordonnée des coups rejoués, plutôt que l'état brut : plus
    petit, et garanti cohérent avec les règles).
+
+Les points 1 et 4 vivent dans `serveur/` ; les points 2 et 3 touchent `bataille_corse/` et
+doivent rester **rétrocompatibles** (paramètres optionnels, comportement par défaut inchangé).
 
 ### 6.3 Le moteur n'est pas modifié pour le réseau
 
