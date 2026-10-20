@@ -21,7 +21,6 @@ dans son pool de threads, donc les accès SQLite ne bloquent jamais la boucle
 from __future__ import annotations
 
 import logging
-import sqlite3
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
