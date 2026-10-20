@@ -312,12 +312,26 @@ curl -s -X POST https://soft.opik.net/corsian-battle/api/jeu/tables \
      -H "Authorization: Bearer $JETON" -H 'Content-Type: application/json' \
      -d '{"type":"duel"}' | python3 -m json.tool
 
-# Handshake WebSocket (curl -I ne suffit PAS : HEAD ≠ Upgrade)
-curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" \
+# Handshake WebSocket — DEUX pièges :
+#   1) `curl -I` ne teste rien : HEAD ≠ Upgrade ;
+#   2) sans `--http1.1`, curl négocie HTTP/2 avec nginx, et HTTP/2 ne porte
+#      l'upgrade WebSocket que via RFC 8441, non activé par défaut sur
+#      nginx 1.24 → réponse trompeuse (404) alors que le proxy est bon.
+curl -i -N --http1.1 \
+     -H "Connection: Upgrade" -H "Upgrade: websocket" \
      -H "Sec-WebSocket-Version: 13" \
      -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
      https://soft.opik.net/corsian-battle/ws
 # Attendu : HTTP/1.1 101 Switching Protocols
+```
+
+Le test en HTTP/1.1 **direct** sur le backend lève toute ambiguïté :
+
+```bash
+curl -i -N --http1.1 -H "Connection: Upgrade" -H "Upgrade: websocket" \
+     -H "Sec-WebSocket-Version: 13" \
+     -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+     http://127.0.0.1:8112/ws
 ```
 
 ## 7. Ce qui est volontairement absent du REST
