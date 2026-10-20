@@ -17,8 +17,10 @@ if [ -n "${PYTHON:-}" ]; then
   PY="$PYTHON"
 elif [ -x "$RACINE/.venv/bin/python" ]; then
   PY="$RACINE/.venv/bin/python"
-elif [ -x "$HOME/corsian-battle/.venv/bin/python" ]; then
-  PY="$HOME/corsian-battle/.venv/bin/python"
+elif [ -x "$RACINE/../.venv/bin/python" ]; then
+  # Disposition de production sur noe : code dans ~/corsian-battle/app,
+  # venv un cran au-dessus. Aucun chemin en dur, aucune casse supposée.
+  PY="$RACINE/../.venv/bin/python"
 else
   PY="python3"
 fi

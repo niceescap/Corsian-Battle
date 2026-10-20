@@ -95,8 +95,17 @@ class Table:
     terminee_le: Optional[float] = None
     raison_fin: Optional[str] = None
     url_partage: str = ""
+    # Partie en cours (`serveur.jeu.partie.PartieEnLigne`). Typé `Any` pour
+    # éviter l'importation circulaire : `partie` importe `table`, pas l'inverse.
+    partie: Any = None
 
     # ------------------------------------------------------------------ #
+    def siege(self, numero: int) -> Optional[Siege]:
+        for un_siege in self.sieges:
+            if un_siege.numero == numero:
+                return un_siege
+        return None
+
     @property
     def taille(self) -> int:
         return len(self.sieges)

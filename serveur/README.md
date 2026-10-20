@@ -7,7 +7,8 @@ Règles du jeu : **jamais réimplémentées ici** — `bataille_corse/` reste la
 serveur/
   requirements.txt        fastapi, uvicorn[standard], PyJWT, cryptography
   commun/config.py        lecture de l'environnement (noms de docs/DEPLOIEMENT.md §3)
-  commun/bd.py            SQLite WAL + migrations + suppression RGPD
+  commun/bd.py            SQLite WAL + migrations + suppression RGPD (seul module
+                          qui importe sqlite3 ; ailleurs : bd.Connexion, bd.ErreurIntegrite)
   commun/jwt.py           RS256 : émission (auth), vérification par JWKS (jeu)
   commun/pseudo.py        filtre UGC des pseudos
   commun/limites.py       limiteur de débit glissant
@@ -15,8 +16,11 @@ serveur/
   auth/main.py            corsian-auth  → 127.0.0.1:8111
   jeu/main.py             corsian-jeu   → 127.0.0.1:8112 (REST + WebSocket /ws)
   jeu/table.py            tables en mémoire, sièges, instantanés filtrés
+  jeu/partie.py           PartieEnLigne : moteur + tour + délai de tour + fin
+  jeu/evenements.py       un coup de moteur → événements diffusables (diff d'état)
   jeu/resolveur_reseau.py ResolveurTapeReseau (fenêtre de tape, plausibilité)
   tests/                  exécutables avec pytest **ou** sans aucune dépendance
+  tests/client_headless.py  joue des parties complètes en WebSocket, sans l'app
   lancer_local.sh         démarre les deux services en premier plan
 ```
 
@@ -38,8 +42,12 @@ roues préconstruites pour linux/x86_64.
 ./serveur/lancer_local.sh          # les deux services en premier plan, Ctrl-C arrête tout
 ```
 
-Le script crée `./var/corsian.db`, génère une clé RS256 de **développement** si
-absente, et démarre :
+Le script crée `./var/corsian.db` (schéma appliqué par la migration `001`) et,
+**au tout premier lancement uniquement**, génère la clé RS256 de développement
+dans `./var/cles/auth-rs256.pem` (`chmod 600`, un `WARNING` est journalisé à
+cette occasion — c'est normal). Aucun `openssl` manuel n'est requis en dev ; en
+production il l'est (`docs/DEPLOIEMENT.md` §3, et `ENVIRONNEMENT=prod` refuse de
+démarrer sans clé). Le script démarre ensuite :
 
 - `corsian-auth` sur `127.0.0.1:8111`
 - `corsian-jeu` sur `127.0.0.1:8112`
@@ -87,20 +95,36 @@ curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" \
 
 ```bash
 # Sans pytest, depuis n'importe quel dossier :
-python3 serveur/tests/test_pseudo.py
-python3 serveur/tests/test_moteur_nonregression.py
-python3 serveur/tests/test_resolveur_reseau.py
+python3 serveur/tests/test_pseudo.py                  # filtre UGC
+python3 serveur/tests/test_moteur_nonregression.py    # les règles, dont « personne n'a tapé »
+python3 serveur/tests/test_resolveur_reseau.py        # fenêtre de tape, plausibilité
+python3 serveur/tests/test_boucle_coups.py            # boucle de coups, diffusion, sièges
 
 # Avec pytest (optionnel) :
 .venv/bin/python -m pytest serveur/tests -q
 ```
 
 `test_moteur_nonregression.py` verrouille les règles déjà validées sur
-téléphone **et** le nouveau cas « personne n'a tapé ». À rejouer avant tout
-déploiement : c'est le seul filet qui garantit que le serveur arbitre comme
-l'app hors-ligne.
+téléphone **et** le cas « personne n'a tapé ». À rejouer avant tout
+déploiement : c'est le filet qui garantit que le serveur arbitre comme l'app
+hors-ligne. Le moteur seul reste vérifiable par `python3 demo.py`.
 
-Le moteur seul (hors serveur) reste vérifiable par `python3 demo.py`.
+### Recette de bout en bout, sans l'app
+
+Deux services lancés, puis dans un autre terminal :
+
+```bash
+python3 serveur/tests/client_headless.py --joueurs 2 --verbeux
+python3 serveur/tests/client_headless.py --joueurs 4 --parties 3
+python3 serveur/tests/client_headless.py --auth https://soft.opik.net/corsian-battle \
+                                        --jeu  https://soft.opik.net/corsian-battle
+```
+
+Le client crée les comptes invités, ouvre une table, fait asseoir tout le
+monde, se déclare prêt, puis joue jusqu'à `partie_finie` en imprimant le
+transcript (messages privés marqués `[privé]`). Il répond déjà `tape` à
+`doublon_ouvert`, donc il recettera le lot B sans modification. Code de sortie
+`0` si toutes les parties sont menées à leur terme.
 
 ## 5. Ce qui est implémenté — et ce qui ne l'est pas encore
 
@@ -118,22 +142,32 @@ Le moteur seul (hors serveur) reste vérifiable par `python3 demo.py`.
 | `WS /ws` | `bonjour` → `bienvenue` → `table_etat` filtré, `pret`, `ping`, `resynchroniser`, `quitter`, limites de débit, codes de fermeture de `docs/PROTOCOLE.md` §12 |
 | `ResolveurTapeReseau` | fenêtre, plancher physiologique, rejets, suspicions, `None` si personne n'a tapé |
 | Adaptation du moteur | `_resoudre_doublon()` peut renvoyer `None` — rétrocompatible |
+| **Boucle de coups** | `PartieEnLigne` : lancement après `pret` + compte à rebours, `carte_posee`, `defi_ouvert`, `defi_rebondit`, `pli_gagne`, `ta_carte_suivante` privé, `partie_finie` |
+| Délai de tour | 12 s puis coup automatique (`auto: true`) |
+| Extraction des événements | `evenements.jouer_coup()` : diff d'état avant/après, **le moteur n'est pas modifié** |
+| Fins de partie | `victoire`, `partie_nulle` (blocage ou garde-fou), `expiration` (30 min), `abandon` (table vide > 30 s) |
+| Persistance | partie terminée + participations écrites en base, dans un thread, sans bloquer la boucle |
+| Recette sans l'app | `tests/client_headless.py` joue des parties complètes en WebSocket |
 
-**Pas encore (étapes S1 complet → S3)**
+**Pas encore (lot B → S4)**
 
+- **fenêtre de doublon en conditions réelles** : `doublon_ouvert` → collecte des
+  `tape` → `doublon_resolu`, avec consignation des suspicions en base. Le
+  résolveur est écrit et testé ; il ne reste qu'à l'installer à la place de
+  `ResolveurAucuneTape` ;
+- **bots de remplacement** après 30 s de déconnexion, et reconnexion sur
+  instantané en cours de partie ;
 - connexion email/mot de passe (argon2id) et rattachement d'email ;
 - changement de pseudo et code de suppression à 9 caractères pour la voie web ;
-- **boucle de coups** : branchement du moteur sur la table, `carte_posee`,
-  `defi_ouvert`, `pli_gagne`, délai de tour et coup automatique ;
-- fenêtre de doublon en conditions réelles (`doublon_ouvert` → collecte des
-  `tape` → `doublon_resolu`) et consignation des suspicions en base ;
-- déconnexion > 30 s → bot, reconnexion sur instantané ;
-- matchmaking, historique, classement, signalements et blocages ;
-- instantanés de reprise dans `tables_snapshot`.
+- instantanés de reprise dans `tables_snapshot` ;
+- matchmaking, historique, classement, signalements et blocages.
 
-Jusqu'à la boucle de coups, `poser_carte` et `tape` sont reconnus mais
-répondent `pas_encore_en_partie` : le contrat des messages est déjà celui de la
-spec, donc le client n'aura pas à changer.
+⚠️ **Limite assumée du lot A** : les doublons passent **sans effet** — le
+résolveur installé est `ResolveurAucuneTape`, qui emprunte le chemin
+« personne n'a tapé » du moteur. Une partie en ligne reste jouable et se
+termine normalement (les plis tombent sur défi manqué), mais l'arme principale
+du jeu n'est pas encore active. C'est précisément ce que le lot B remplace,
+sans aucun autre changement.
 
 ## 6. Points de vigilance
 

@@ -21,7 +21,6 @@ dans son pool de threads, donc les accès SQLite ne bloquent jamais la boucle
 from __future__ import annotations
 
 import logging
-import sqlite3
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
@@ -180,7 +179,7 @@ def _authentifie(
 
 
 def _session_valide(
-    conn: sqlite3.Connection, empreinte_refresh: str, ip: str
+    conn: bd.Connexion, empreinte_refresh: str, ip: str
 ) -> Dict[str, Any]:
     """Contrôle d'un jeton de refresh, rotation comprise.
 
@@ -206,7 +205,7 @@ def _session_valide(
 
 
 def _paire_jetons(
-    conn: sqlite3.Connection,
+    conn: bd.Connexion,
     joueur: Dict[str, Any],
     appareil_id: Optional[str],
     ip: str,
@@ -333,7 +332,7 @@ def invite(corps: InviteRequete, request: Request) -> JSONResponse:
                         conn, appareil_id, joueur_id, corps.uuid_appareil,
                         corps.plateforme, corps.version_app,
                     )
-                except sqlite3.IntegrityError:
+                except bd.ErreurIntegrite:
                     # Course entre deux demandes : le pseudo a été pris entre-temps.
                     raise ErreurApi("pseudo_indisponible", "Ce pseudo est déjà pris.", 409)
                 joueur = bd.joueur_par_id(conn, joueur_id) or {

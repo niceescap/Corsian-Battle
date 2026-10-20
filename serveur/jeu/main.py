@@ -23,8 +23,9 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from contextlib import asynccontextmanager
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
@@ -36,6 +37,7 @@ from serveur.commun import bd
 from serveur.commun import jwt as jetons
 from serveur.commun.config import VERSION_PROTO, Config, config_jeu, verifier_production
 from serveur.commun.limites import Limiteur
+from serveur.jeu.partie import PartieEnLigne
 from serveur.jeu.table import TAILLES, ErreurTable, GestionnaireTables, Siege, Table
 
 journal = logging.getLogger("corsian.jeu")
@@ -68,11 +70,15 @@ async def _entretien_periodique() -> None:
     while True:
         await asyncio.sleep(60)
         try:
+            abandonnees = await _cloturer_tables_abandonnees()
             fermees = tables.nettoyer()
             _limiteur_ws.nettoyer()
             _limiteur_rest.nettoyer()
-            if fermees:
-                journal.info("Entretien : %d table(s) fermée(s), %d active(s)", fermees, tables.actives())
+            if fermees or abandonnees:
+                journal.info(
+                    "Entretien : %d table(s) fermée(s), %d partie(s) close(s), %d active(s)",
+                    fermees, abandonnees, tables.actives(),
+                )
         except Exception:
             journal.exception("Entretien périodique en échec")
 
@@ -215,21 +221,46 @@ async def _envoyer(websocket: WebSocket, message: Dict[str, Any]) -> bool:
         return False
 
 
-async def _diffuser(table: Table, message: Dict[str, Any], sauf: Optional[int] = None) -> None:
+async def _diffuser(
+    table: Table,
+    message: Dict[str, Any],
+    vers: Optional[List[int]] = None,
+    sauf: Optional[int] = None,
+) -> None:
+    """Diffuse aux sièges connectés.
+
+    `vers=None` → tout le monde ; `vers=[2]` → uniquement le siège 2 (messages
+    privés comme `ta_carte_suivante`) ; `sauf=n` → tout le monde sauf n.
+    C'est ici, et nulle part ailleurs, qu'un message privé est borné à son
+    destinataire : `PartieEnLigne` ne connaît pas les sockets.
+    La signature correspond à `serveur.jeu.partie.Diffuseur`.
+    """
     for siege in table.sieges:
-        if siege.websocket is None or siege.numero == sauf:
+        if siege.websocket is None:
+            continue
+        if vers is not None and siege.numero not in vers:
+            continue
+        if sauf is not None and siege.numero == sauf:
             continue
         await _envoyer(siege.websocket, message)
 
 
 async def _instantane_par_siege(table: Table, seq: int) -> None:
-    """`table_etat` **filtré** : chaque siège reçoit sa propre copie."""
+    """`table_etat` **filtré** : chaque siège reçoit sa propre copie.
+
+    Les champs de partie (pli, reste neutre, tour, défi) viennent de la partie
+    en cours s'il y en a une ; sinon l'instantané reste celui d'une table en
+    attente. Le client n'a donc qu'un seul contrat, avant et après le
+    lancement (`docs/PROTOCOLE.md` §6).
+    """
+    complement = table.partie.etat_public() if table.partie is not None else {}
     for siege in table.sieges:
         if siege.websocket is None:
             continue
+        donnees = table.instantane(siege.numero)
+        donnees.update(complement)
         await _envoyer(
-            siege.websocket,
-            {"type": "table_etat", "seq": seq, "d": table.instantane(siege.numero)},
+            siege.websocket, {"type": "table_etat", "seq": seq, "d": donnees}
         )
 
 
@@ -378,6 +409,101 @@ def fermer_table(
 
 
 # ---------------------------------------------------------------------------
+# Lancement, fin et persistance des parties
+# ---------------------------------------------------------------------------
+async def _lancer_partie(table: Table) -> None:
+    """Compte à rebours puis lancement, une fois tous les humains prêts."""
+    table.etat = "compte_a_rebours"
+    await _diffuser(
+        table,
+        {"type": "compte_a_rebours", "seq": table.prochain_seq(),
+         "d": {"secondes": cfg.compte_a_rebours_s}},
+    )
+    await asyncio.sleep(cfg.compte_a_rebours_s)
+    if table.partie is not None:
+        return                                    # lancée entre-temps
+    if not table.tous_prets():
+        table.etat = "attente"                    # un joueur est parti : on attend
+        await _diffuser(
+            table,
+            {"type": "compte_a_rebours", "seq": table.prochain_seq(),
+             "d": {"secondes": 0, "annule": True}},
+        )
+        return
+    partie = PartieEnLigne(table, _diffuser, cfg, sur_fin=_persister_partie)
+    table.partie = partie
+    await partie.lancer()
+
+
+async def _persister_partie(partie: PartieEnLigne, raison: str, gagnant_siege) -> None:
+    """Écrit la partie terminée en base — E/S bloquante, donc dans un thread."""
+    await asyncio.to_thread(_ecrire_partie, partie, raison, gagnant_siege)
+
+
+def _ecrire_partie(partie: PartieEnLigne, raison: str, gagnant_siege) -> None:
+    partie_id = uuid.uuid4().hex
+    table = partie.table
+    gagnant_id = None
+    if gagnant_siege is not None:
+        siege_gagnant = table.siege(gagnant_siege)
+        gagnant_id = siege_gagnant.joueur_id if siege_gagnant is not None else None
+    with bd.connexion(cfg.base_chemin) as conn:
+        bd.creer_partie(
+            conn,
+            partie_id=partie_id,
+            code_table=table.code,
+            type_partie=table.type_partie,
+            # `maintenant_iso(decalage)` : un décalage négatif ramène à l'instant
+            # de lancement, sans avoir à formater une date soi-même.
+            cree_le=bd.maintenant_iso(partie.lance_le - time.time()),
+            seed=partie.seed,
+            terminee_le=bd.maintenant_iso(),
+            gagnant_id=gagnant_id,
+            raison_fin=raison,
+            nb_coups=partie.coups,
+            nb_doublons=partie.doublons_ouverts,
+            duree_ms=int((time.time() - partie.lance_le) * 1000),
+        )
+        for numero in partie.par_index:
+            siege = table.siege(numero)
+            if siege is None:
+                continue
+            bd.creer_participation(
+                conn,
+                partie_id=partie_id,
+                siege=numero,
+                joueur_id=siege.joueur_id,
+                pseudo_affiche=siege.pseudo,
+                est_bot=siege.est_bot,
+                nb_cartes_final=siege.nb_cartes,
+            )
+    journal.info("Partie %s enregistrée (%s, %d coups)", partie_id, raison, partie.coups)
+
+
+async def _cloturer_tables_abandonnees() -> int:
+    """Clos une partie que plus personne ne regarde.
+
+    En `attente`, l'expiration relève de `GestionnaireTables.nettoyer()`. En
+    `en_jeu`, il ne faut pas laisser une partie tourner indéfiniment à coups
+    automatiques sans aucun joueur connecté : après le délai de grâce (30 s,
+    celui laissé à la reconnexion), elle est close en `abandon`. Le lot C
+    remplacera cette clôture par la prise de main des bots.
+    """
+    cloturees = 0
+    for code in tables.codes():
+        table = tables.obtenir(code)
+        if table.etat != "en_jeu" or table.partie is None or table.a_des_sockets():
+            continue
+        deconnectes = [s.deconnecte_le or 0.0 for s in table.sieges]
+        if not deconnectes:
+            continue
+        if time.time() - max(deconnectes) > cfg.grace_deconnexion_s:
+            await table.partie.finir("abandon")
+            cloturees += 1
+    return cloturees
+
+
+# ---------------------------------------------------------------------------
 # WebSocket
 # ---------------------------------------------------------------------------
 @app.websocket("/ws")
@@ -473,11 +599,15 @@ async def websocket_jeu(websocket: WebSocket) -> None:
         siege.deconnecte_le = time.time()
         if table.etat == "attente":
             tables.quitter(table.code, joueur_id)
-            await _diffuser(
-                table,
-                {"type": "joueur_parti", "seq": table.prochain_seq(),
-                 "d": {"siege": siege.numero, "remplace_par_bot": False}},
-            )
+        # Les autres doivent voir le siège se vider, en attente comme en jeu.
+        # En `en_jeu` le siège n'est PAS libéré : le joueur peut se reconnecter
+        # et le récupérer, et le délai de tour fait avancer la partie en son
+        # absence. Le lot C ajoutera le bot de remplacement après 30 s.
+        await _diffuser(
+            table,
+            {"type": "joueur_parti", "seq": table.prochain_seq(),
+             "d": {"siege": siege.numero, "remplace_par_bot": False}},
+        )
         journal.info("WS fermé · table=%s siège=%d", table.code, siege.numero)
 
 
@@ -518,18 +648,36 @@ async def _traiter(table: Table, siege: Siege, message: Dict[str, Any]) -> bool:
             table,
             {"type": "joueur_pret", "seq": table.prochain_seq(), "d": {"siege": siege.numero}},
         )
+        if table.tous_prets() and table.partie is None:
+            await _lancer_partie(table)
         return True
 
     if type_ == "quitter":
         return False
 
-    if type_ in ("poser_carte", "tape", "signaler"):
-        # S2/S3 : boucle de coups et fenêtre de doublon. Le message est
-        # reconnu (donc le client peut déjà l'émettre) mais la table n'est pas
-        # encore en jeu.
+    if type_ == "poser_carte":
+        if table.partie is None or table.etat != "en_jeu":
+            await _envoyer(
+                siege.websocket,
+                _message_erreur("pas_encore_en_partie", "La table n'est pas encore en jeu."),
+            )
+            return True
+        if seq_attendu is not None and seq_attendu != table.seq:
+            # Action périmée (double appui, retard) : refusée plutôt que
+            # rejouée — c'est le rôle de `seq_attendu` (`PROTOCOLE.md` §2).
+            await _envoyer(
+                siege.websocket,
+                _message_erreur("coup_perime", "Coup refusé : la table a avancé."),
+            )
+            return True
+        await table.partie.poser_carte(siege.numero)
+        return True
+
+    if type_ in ("tape", "signaler"):
+        # Lot B : fenêtre de doublon. Étape S4 : signalements.
         await _envoyer(
             siege.websocket,
-            _message_erreur("pas_encore_en_partie", "La table n'est pas encore en jeu."),
+            _message_erreur("pas_encore_en_partie", "Pas encore pris en charge par le serveur."),
         )
         return True
 
