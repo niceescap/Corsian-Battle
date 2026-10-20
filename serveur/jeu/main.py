@@ -36,7 +36,7 @@ from serveur.commun import bd
 from serveur.commun import jwt as jetons
 from serveur.commun.config import VERSION_PROTO, Config, config_jeu, verifier_production
 from serveur.commun.limites import Limiteur
-from serveur.jeu.table import ErreurTable, GestionnaireTables, Siege, Table
+from serveur.jeu.table import TAILLES, ErreurTable, GestionnaireTables, Siege, Table
 
 journal = logging.getLogger("corsian.jeu")
 
