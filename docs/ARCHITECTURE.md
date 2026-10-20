@@ -131,9 +131,10 @@ location /corsian-battle/api/jeu/ {
 }
 ```
 
-Le WS existant devra recevoir les mêmes en-têtes d'upgrade s'ils ne sont pas déjà présents
-(`proxy_http_version 1.1`, `Upgrade`, `Connection "upgrade"`, `proxy_read_timeout 3600s`) :
-sans timeout long, nginx coupe les sockets inactifs à 60 s.
+Le `location` WS existant comporte déjà les en-têtes d'upgrade et les timeouts longs : il ne lui
+manque que `proxy_buffering off`, sans quoi nginx agrège les trames et retarde le démarrage du
+chronomètre de tape côté client (`DEPLOIEMENT.md` §5.2). **Les deux blocs API ci-dessus sont
+donc le seul ajout nginx requis** pour démarrer S0.
 
 **Avantage de cette convention** : le backend expose ses chemins réels (`/api/auth/…`), donc il
 est testable en local sans nginx — `curl 127.0.0.1:8111/api/auth/sante` — et l'URL publique
