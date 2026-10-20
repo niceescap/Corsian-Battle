@@ -179,7 +179,7 @@ def _authentifie(
 
 
 def _session_valide(
-    conn: sqlite3.Connection, empreinte_refresh: str, ip: str
+    conn: bd.Connexion, empreinte_refresh: str, ip: str
 ) -> Dict[str, Any]:
     """Contrôle d'un jeton de refresh, rotation comprise.
 
@@ -205,7 +205,7 @@ def _session_valide(
 
 
 def _paire_jetons(
-    conn: sqlite3.Connection,
+    conn: bd.Connexion,
     joueur: Dict[str, Any],
     appareil_id: Optional[str],
     ip: str,
