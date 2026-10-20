@@ -375,15 +375,16 @@ def invite(corps: InviteRequete, request: Request) -> JSONResponse:
 def rafraichir(corps: JetonRequete, request: Request) -> JSONResponse:
     _limiter(request, "rafraichir")
     with bd.connexion(cfg.base_chemin) as conn:
-        _etat["conn"] = conn
         try:
             trouve = _session_valide(conn, jetons.empreinte(corps.jeton_refresh), _ip(request))
             bd.revoquer_session(conn, trouve["session"]["id"])   # rotation
             joueur = trouve["joueur"]
             bd.touch_joueur(conn, joueur["id"])
-            emis = _paire_jetons(joueur, trouve["session"].get("appareil_id"), _ip(request))
+            emis = _paire_jetons(
+                conn, joueur, trouve["session"].get("appareil_id"), _ip(request)
+            )
         finally:
-            _etat["conn"] = None
+            _limiteurs["rafraichir"].nettoyer()
     return JSONResponse(
         {
             "joueur": {"id": joueur["id"], "pseudo": joueur["pseudo"]},
