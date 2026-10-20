@@ -173,10 +173,11 @@ location /corsian-battle/api/auth/ { proxy_pass http://127.0.0.1:8111/api/auth/;
 location /corsian-battle/api/jeu/  { proxy_pass http://127.0.0.1:8112/api/jeu/;  … }
 ```
 
-### 5.2 ⏳ Complément au `location` WS existant
+### 5.2 ✅ `location` WS existant — une seule directive à ajouter
 
-Le `location ^~ /corsian-battle/ws` est déjà en place et **correct sur le chemin**
-(backend `/ws`). Il lui manque vraisemblablement les en-têtes d'upgrade et un timeout long :
+Le bloc `location ^~ /corsian-battle/ws` est **déjà en place et correct** : chemin
+(`proxy_pass http://127.0.0.1:8112/ws` → backend `/ws`), `proxy_http_version 1.1`, en-têtes
+`Upgrade`/`Connection`, timeouts longs. Rien à reprendre. État actuel, pour référence :
 
 ```nginx
 location ^~ /corsian-battle/ws {
