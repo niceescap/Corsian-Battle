@@ -106,31 +106,43 @@ déclarer l'handshake sur **`/ws`** (choix retenu, `@app.websocket("/ws")`). Ce 
 fonctionnel en l'état — une seule directive y manque, `proxy_buffering off`
 (`DEPLOIEMENT.md` §5.2).
 
-### 4.3 ⏳ À ajouter dans nginx (proposition, en attente de validation)
+### 4.3 ✅ Ajouté dans nginx (configuration posée)
 
 ```nginx
 # API d'authentification — public /corsian-battle/api/auth/* → backend /api/auth/*
-location /corsian-battle/api/auth/ {
+location ^~ /corsian-battle/api/auth/ {
     proxy_pass http://127.0.0.1:8111/api/auth/;
     proxy_http_version 1.1;
     proxy_set_header Host              $host;
     proxy_set_header X-Real-IP         $remote_addr;
     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_read_timeout 30s;
+    proxy_read_timeout  30s;
+    proxy_send_timeout  60s;
 }
 
 # API de jeu — public /corsian-battle/api/jeu/* → backend /api/jeu/*
-location /corsian-battle/api/jeu/ {
+location ^~ /corsian-battle/api/jeu/ {
     proxy_pass http://127.0.0.1:8112/api/jeu/;
     proxy_http_version 1.1;
     proxy_set_header Host              $host;
     proxy_set_header X-Real-IP         $remote_addr;
     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_read_timeout 30s;
+    proxy_read_timeout  60s;
+    proxy_send_timeout  60s;
 }
 ```
+
+`^~` est important : il donne la priorité à ces préfixes sur toute expression
+régulière concurrente du vhost, donc une future `location ~ \.php$` ne pourra
+pas détourner l'API. Les timeouts sont volontairement asymétriques — 30 s en
+lecture sur l'auth (requêtes courtes, une attente longue signale un backend
+bloqué) et 60 s sur le jeu (création de table, matchmaking).
+
+Le `location` WS existant porte déjà `Upgrade`/`Connection` et des timeouts de
+3600 s ; `proxy_buffering off` y a été ajouté. **Les trois blocs sont en
+place** : aucun changement nginx n'est plus nécessaire pour démarrer S0.
 
 Le `location` WS existant comporte déjà les en-têtes d'upgrade et les timeouts longs : il ne lui
 manque que `proxy_buffering off`, sans quoi nginx agrège les trames et retarde le démarrage du
