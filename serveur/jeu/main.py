@@ -216,9 +216,26 @@ async def _envoyer(websocket: WebSocket, message: Dict[str, Any]) -> bool:
         return False
 
 
-async def _diffuser(table: Table, message: Dict[str, Any], sauf: Optional[int] = None) -> None:
+async def _diffuser(
+    table: Table,
+    message: Dict[str, Any],
+    vers: Optional[List[int]] = None,
+    sauf: Optional[int] = None,
+) -> None:
+    """Diffuse aux sièges connectés.
+
+    `vers=None` → tout le monde ; `vers=[2]` → uniquement le siège 2 (messages
+    privés comme `ta_carte_suivante`) ; `sauf=n` → tout le monde sauf n.
+    C'est ici, et nulle part ailleurs, qu'un message privé est borné à son
+    destinataire : `PartieEnLigne` ne connaît pas les sockets.
+    La signature correspond à `serveur.jeu.partie.Diffuseur`.
+    """
     for siege in table.sieges:
-        if siege.websocket is None or siege.numero == sauf:
+        if siege.websocket is None:
+            continue
+        if vers is not None and siege.numero not in vers:
+            continue
+        if sauf is not None and siege.numero == sauf:
             continue
         await _envoyer(siege.websocket, message)
 
