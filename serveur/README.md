@@ -142,22 +142,32 @@ transcript (messages privés marqués `[privé]`). Il répond déjà `tape` à
 | `WS /ws` | `bonjour` → `bienvenue` → `table_etat` filtré, `pret`, `ping`, `resynchroniser`, `quitter`, limites de débit, codes de fermeture de `docs/PROTOCOLE.md` §12 |
 | `ResolveurTapeReseau` | fenêtre, plancher physiologique, rejets, suspicions, `None` si personne n'a tapé |
 | Adaptation du moteur | `_resoudre_doublon()` peut renvoyer `None` — rétrocompatible |
+| **Boucle de coups** | `PartieEnLigne` : lancement après `pret` + compte à rebours, `carte_posee`, `defi_ouvert`, `defi_rebondit`, `pli_gagne`, `ta_carte_suivante` privé, `partie_finie` |
+| Délai de tour | 12 s puis coup automatique (`auto: true`) |
+| Extraction des événements | `evenements.jouer_coup()` : diff d'état avant/après, **le moteur n'est pas modifié** |
+| Fins de partie | `victoire`, `partie_nulle` (blocage ou garde-fou), `expiration` (30 min), `abandon` (table vide > 30 s) |
+| Persistance | partie terminée + participations écrites en base, dans un thread, sans bloquer la boucle |
+| Recette sans l'app | `tests/client_headless.py` joue des parties complètes en WebSocket |
 
-**Pas encore (étapes S1 complet → S3)**
+**Pas encore (lot B → S4)**
 
+- **fenêtre de doublon en conditions réelles** : `doublon_ouvert` → collecte des
+  `tape` → `doublon_resolu`, avec consignation des suspicions en base. Le
+  résolveur est écrit et testé ; il ne reste qu'à l'installer à la place de
+  `ResolveurAucuneTape` ;
+- **bots de remplacement** après 30 s de déconnexion, et reconnexion sur
+  instantané en cours de partie ;
 - connexion email/mot de passe (argon2id) et rattachement d'email ;
 - changement de pseudo et code de suppression à 9 caractères pour la voie web ;
-- **boucle de coups** : branchement du moteur sur la table, `carte_posee`,
-  `defi_ouvert`, `pli_gagne`, délai de tour et coup automatique ;
-- fenêtre de doublon en conditions réelles (`doublon_ouvert` → collecte des
-  `tape` → `doublon_resolu`) et consignation des suspicions en base ;
-- déconnexion > 30 s → bot, reconnexion sur instantané ;
-- matchmaking, historique, classement, signalements et blocages ;
-- instantanés de reprise dans `tables_snapshot`.
+- instantanés de reprise dans `tables_snapshot` ;
+- matchmaking, historique, classement, signalements et blocages.
 
-Jusqu'à la boucle de coups, `poser_carte` et `tape` sont reconnus mais
-répondent `pas_encore_en_partie` : le contrat des messages est déjà celui de la
-spec, donc le client n'aura pas à changer.
+⚠️ **Limite assumée du lot A** : les doublons passent **sans effet** — le
+résolveur installé est `ResolveurAucuneTape`, qui emprunte le chemin
+« personne n'a tapé » du moteur. Une partie en ligne reste jouable et se
+termine normalement (les plis tombent sur défi manqué), mais l'arme principale
+du jeu n'est pas encore active. C'est précisément ce que le lot B remplace,
+sans aucun autre changement.
 
 ## 6. Points de vigilance
 
