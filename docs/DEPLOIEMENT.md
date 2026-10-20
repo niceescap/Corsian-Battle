@@ -284,17 +284,25 @@ migration a été appliquée (les migrations ne sont pas réversibles automatiqu
 | Pas de `release`/`tag` dans le workflow | Les artefacts se récupèrent via l'API JSON ; une voie « release GitHub » reste à poser par Nicolas |
 | Aucun macOS disponible | Pas de build iOS, donc pas de TestFlight tant qu'un accès Mac n'existe pas |
 
-## 10. ⏳ Points à trancher avant toute installation
+## 10. Points bloquants — état
 
-1. **Contenu de la racine statique** : `ls -la /home/nicee/agent/softopik/projects/corsian-battle/`.
-   Politique : strictement additif, aucun `index.html` existant écrasé.
-2. **Ajout des deux blocs `location` API** (§5.1) et **complément du bloc WS** (§5.2), par
-   Nicolas, puis `sudo nginx -t`.
-3. **Budget mémoire** : 2 × 80 à 450 Mo (plafonnés par `MemoryMax`) alors que le swap est déjà
+1. ✅ **Tranché — contenu de la racine statique.** `ls -la` effectué :
+   `/home/nicee/agent/softopik/projects/corsian-battle/` contient `index.html` (landing
+   officielle, 15 Ko) et `static/` (`logo_og.png`, `logo_site.png`), dont la landing dépend.
+   **Ces deux éléments sont conservés tels quels.** Politique appliquée : strictement additif —
+   seules les pages nouvelles (`privacy.html`, `terms.html`, `suppression-compte.html`,
+   `support.html`) et les dossiers `apk/`, `aab/` sont déposés.
+2. ⏳ **Ajout des deux blocs `location` API** (§5.1) et **de la directive `proxy_buffering off`**
+   dans le bloc WS existant (§5.2), par Nicolas, puis `sudo nginx -t && sudo systemctl reload nginx`.
+3. ⏳ **Budget mémoire** : 2 × 80 à 450 Mo (plafonnés par `MemoryMax`) alors que le swap est déjà
    à 1,9 Go / 3,6 Go. À confirmer, éventuellement en arrêtant `ollama` pendant les phases de
-   test — mais `ProtectHome`/`MemoryMax` rendent l'incident borné.
-4. **Emplacement des clés** et politique de sauvegarde du keystore de signature (perte =
+   test — `ProtectHome`/`MemoryMax` bornent l'incident.
+4. ⏳ **Emplacement des clés** et politique de sauvegarde du keystore de signature (perte =
    application morte sur Play).
-5. **Validation du nom de domaine applicatif** : tout passe par `soft.opik.net/corsian-battle/`.
-   Un sous-domaine dédié (par ex. `jeu.opik.net`) simplifierait les cookies/CORS et les App Links
-   plus tard, mais ajoute un certificat à émettre. Décision à prendre avant S1.
+5. ✅ **Tranché — nom de domaine : `soft.opik.net/corsian-battle/` en V1.** nginx est déjà
+   câblé pour ce préfixe (statique + WS), aucun certificat supplémentaire à émettre, et le site
+   de téléchargement y est déjà publié. **`jeu.opik.net` est reporté en V2**, uniquement si un
+   besoin concret apparaît (App Links natifs, cookies de premier niveau, isolation des limites
+   de débit). Conséquence de conception : toutes les URL côté app sont relatives au préfixe, et
+   celui-ci n'est transmis aux services que par la variable `PREFIXE_PUBLIC` (§3) — un changement
+   de domaine en V2 ne touchera donc que cette variable et nginx, jamais le code.
