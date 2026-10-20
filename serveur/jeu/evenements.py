@@ -21,7 +21,7 @@ Rien d'interdit ne sort d'ici : les champs produits sont ceux de
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 TAILLE_PAQUET_ATTENDUE = 52
 
