@@ -163,8 +163,10 @@ class BatailleCorse:
         self.historique.append(f"{joueur.nom} joue {carte}.")
 
         # 1) Le doublon est TOUJOURS prioritaire, même en plein défi.
-        if self._est_doublon():
-            self._resoudre_doublon()
+        #    Si personne n'a tapé (résolveur réseau renvoyant None), le
+        #    doublon passe : on enchaîne sur le traitement normal de la
+        #    carte posée ci-dessous, comme à la table physique.
+        if self._est_doublon() and self._resoudre_doublon() is not None:
             return
 
         # 2) Une figure (re)lance ou fait rebondir le défi, qu'il y en ait
