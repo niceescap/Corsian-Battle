@@ -324,9 +324,13 @@ def test_partie_complete_jusqu_a_la_fin():
             fin.append((raison, gagnant))
 
         partie = PartieEnLigne(table, publie, config_jeu(), seed=20260916, sur_fin=sur_fin)
+        # Doublons arbitrés par le résolveur de référence : la partie peut se
+        # terminer. Avec `ResolveurAucuneTape` (lot A), les plis ne tombent que
+        # sur défi manqué et une partie peut durer très longtemps.
+        partie.resolveur = ResolveurSimulationBots(seed=11)
         await partie.lancer()
         garde = 0
-        while not partie.termine and garde < 5000:
+        while not partie.termine and garde < 50000:
             await partie.jouer(auto=True)
             garde += 1
         partie.detruire()
@@ -337,7 +341,7 @@ def test_partie_complete_jusqu_a_la_fin():
     assert partie.raison_fin in ("victoire", "partie_nulle", "expiration")
     assert publie.types()[-1] == "partie_finie"
     assert len(fin) == 1
-    assert garde < 5000
+    assert garde < 50000
     assert evenements.total_cartes(partie.jeu) == 52
     cloture = publie.du_type("partie_finie")[0]["d"]
     assert cloture["raison"] == partie.raison_fin
