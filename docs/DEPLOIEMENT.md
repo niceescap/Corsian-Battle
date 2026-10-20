@@ -297,8 +297,11 @@ migration a été appliquée (les migrations ne sont pas réversibles automatiqu
    **Ces deux éléments sont conservés tels quels.** Politique appliquée : strictement additif —
    seules les pages nouvelles (`privacy.html`, `terms.html`, `suppression-compte.html`,
    `support.html`) et les dossiers `apk/`, `aab/` sont déposés.
-2. ⏳ **Ajout des deux blocs `location` API** (§5.1) et **de la directive `proxy_buffering off`**
-   dans le bloc WS existant (§5.2), par Nicolas, puis `sudo nginx -t && sudo systemctl reload nginx`.
+2. ✅ **Tranché — nginx posé.** Les deux blocs `location ^~` API (§5.1) et `proxy_buffering off`
+   sur le WS (§5.2) sont en place. Contrôle effectué : landing = `200`, les trois proxies = `502`
+   (proxy actif, backend non démarré — comportement attendu). **Plus aucun changement nginx
+   n'est nécessaire pour S0** : les `502` doivent basculer en `200`/`401`/`404` dès que
+   `corsian-auth` et `corsian-jeu` tournent.
 3. ⏳ **Budget mémoire** : 2 × 80 à 450 Mo (plafonnés par `MemoryMax`) alors que le swap est déjà
    à 1,9 Go / 3,6 Go. À confirmer, éventuellement en arrêtant `ollama` pendant les phases de
    test — `ProtectHome`/`MemoryMax` bornent l'incident.
