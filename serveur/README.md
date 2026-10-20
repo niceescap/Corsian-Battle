@@ -91,6 +91,24 @@ curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" \
 À travers nginx, les mêmes routes sont préfixées : `/corsian-battle/api/auth/…`,
 `/corsian-battle/api/jeu/…`, `/corsian-battle/ws`.
 
+### Tester le WebSocket à travers nginx
+
+```bash
+curl -i -N --http1.1 \
+     -H "Connection: Upgrade" -H "Upgrade: websocket" \
+     -H "Sec-WebSocket-Version: 13" \
+     -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+     https://soft.opik.net/corsian-battle/ws
+# Attendu : HTTP/1.1 101 Switching Protocols
+```
+
+⚠️ **`--http1.1` est obligatoire**, et `curl -I` ne teste rien (HEAD ≠ Upgrade).
+Sans `--http1.1`, curl négocie HTTP/2 avec nginx ; HTTP/2 ne porte l'upgrade
+WebSocket que via la RFC 8441, non activée sur nginx 1.24 → on obtient un **404
+trompeur** alors que le proxy et le backend fonctionnent. En cas de doute,
+refaire le même test en direct sur le backend (`http://127.0.0.1:8112/ws`) : s'il
+répond `101`, le problème est entre nginx et curl, pas dans le service.
+
 ## 4. Tester
 
 ```bash
