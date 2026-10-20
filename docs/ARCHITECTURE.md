@@ -141,16 +141,21 @@ n'est qu'un préfixe. Le préfixe public est fourni aux services par variable d'
 (`PREFIXE_PUBLIC=/corsian-battle`) pour les rares URL absolues à produire (liens d'invitation,
 JWKS, suppression de compte).
 
-### 4.4 ⏳ Racine statique — contenu à vérifier avant d'écrire
+### 4.4 ✅ Racine statique — contenu vérifié
 
-`/home/nicee/agent/softopik/projects/corsian-battle/` : un `ls -la` est requis. Politique
-appliquée par précaution :
+`/home/nicee/agent/softopik/projects/corsian-battle/` contient :
 
-- **aucun écrasement** d'un fichier existant (une autre session a pu déposer la page `#download`) ;
-- si `index.html` existe → proposition de diff, ou version posée dans un sous-dossier avec un
-  `location` dédié ;
-- les fichiers nouveaux portent des noms réservés par cette spec : `privacy.html`, `terms.html`,
-  `suppression-compte.html`, et les binaires sous `apk/` et `aab/`.
+- `index.html` — **landing officielle, 15 Ko**, conservée telle quelle ;
+- `static/` — `logo_og.png` et `logo_site.png`, dont la landing dépend (ni renommés ni déplacés).
+
+Règle d'écriture : **strictement additive**. Sont déposés à côté, sans rien modifier de
+l'existant :
+
+- les pages légales `privacy.html`, `terms.html`, `suppression-compte.html`, `support.html` ;
+- les dossiers `apk/` (binaires signés) et `aab/` (usage interne) ;
+- les ancres `#download` et `#table=CODE` : ce sont des fragments de la landing existante. Si
+  l'une des deux manque, elle sera **ajoutée** par un diff proposé à validation, jamais par un
+  remplacement de fichier.
 
 ## 5. Les deux services
 
