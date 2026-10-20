@@ -62,6 +62,32 @@ class ResolveurAucuneTape(ResolveurTape):
         return None
 
 
+class ObservateurResolveur(ResolveurTape):
+    """Enveloppe un résolveur pour savoir, après le coup, si la tape a abouti.
+
+    Le moteur appelle `determiner_gagnant()` **pendant** `jouer_un_coup()` : le
+    verdict n'existe donc pas avant le coup. Plutôt que de le déduire — et de se
+    tromper quand un doublon non tapé ferme aussi un défi, cas exactement
+    relevé en recette du lot A — on observe le retour du résolveur.
+    """
+
+    def __init__(self, interne: ResolveurTape) -> None:
+        self.interne = interne
+        self.appelle = False
+        self.resultat: Optional[Any] = None
+
+    def determiner_gagnant(self, eligibles: List[Any]) -> Optional[Any]:
+        self.appelle = True
+        self.resultat = self.interne.determiner_gagnant(eligibles)
+        return self.resultat
+
+    def tape_reussie(self) -> Optional[bool]:
+        """`None` tant que le résolveur n'a pas été appelé (coup sans doublon)."""
+        if not self.appelle:
+            return None
+        return self.resultat is not None
+
+
 # (table, message, numéros de sièges destinataires ou None pour tous)
 Diffuseur = Callable[[Table, Dict[str, Any], Optional[List[int]]], Awaitable[None]]
 SurFin = Callable[["PartieEnLigne", str, Optional[int]], Awaitable[None]]
