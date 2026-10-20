@@ -405,6 +405,101 @@ def fermer_table(
 
 
 # ---------------------------------------------------------------------------
+# Lancement, fin et persistance des parties
+# ---------------------------------------------------------------------------
+async def _lancer_partie(table: Table) -> None:
+    """Compte à rebours puis lancement, une fois tous les humains prêts."""
+    table.etat = "compte_a_rebours"
+    await _diffuser(
+        table,
+        {"type": "compte_a_rebours", "seq": table.prochain_seq(),
+         "d": {"secondes": cfg.compte_a_rebours_s}},
+    )
+    await asyncio.sleep(cfg.compte_a_rebours_s)
+    if table.partie is not None:
+        return                                    # lancée entre-temps
+    if not table.tous_prets():
+        table.etat = "attente"                    # un joueur est parti : on attend
+        await _diffuser(
+            table,
+            {"type": "compte_a_rebours", "seq": table.prochain_seq(),
+             "d": {"secondes": 0, "annule": True}},
+        )
+        return
+    partie = PartieEnLigne(table, _diffuser, cfg, sur_fin=_persister_partie)
+    table.partie = partie
+    await partie.lancer()
+
+
+async def _persister_partie(partie: PartieEnLigne, raison: str, gagnant_siege) -> None:
+    """Écrit la partie terminée en base — E/S bloquante, donc dans un thread."""
+    await asyncio.to_thread(_ecrire_partie, partie, raison, gagnant_siege)
+
+
+def _ecrire_partie(partie: PartieEnLigne, raison: str, gagnant_siege) -> None:
+    partie_id = uuid.uuid4().hex
+    table = partie.table
+    gagnant_id = None
+    if gagnant_siege is not None:
+        siege_gagnant = table.siege(gagnant_siege)
+        gagnant_id = siege_gagnant.joueur_id if siege_gagnant is not None else None
+    with bd.connexion(cfg.base_chemin) as conn:
+        bd.creer_partie(
+            conn,
+            partie_id=partie_id,
+            code_table=table.code,
+            type_partie=table.type_partie,
+            # `maintenant_iso(decalage)` : un décalage négatif ramène à l'instant
+            # de lancement, sans avoir à formater une date soi-même.
+            cree_le=bd.maintenant_iso(partie.lance_le - time.time()),
+            seed=partie.seed,
+            terminee_le=bd.maintenant_iso(),
+            gagnant_id=gagnant_id,
+            raison_fin=raison,
+            nb_coups=partie.coups,
+            nb_doublons=partie.doublons_ouverts,
+            duree_ms=int((time.time() - partie.lance_le) * 1000),
+        )
+        for numero in partie.par_index:
+            siege = table.siege(numero)
+            if siege is None:
+                continue
+            bd.creer_participation(
+                conn,
+                partie_id=partie_id,
+                siege=numero,
+                joueur_id=siege.joueur_id,
+                pseudo_affiche=siege.pseudo,
+                est_bot=siege.est_bot,
+                nb_cartes_final=siege.nb_cartes,
+            )
+    journal.info("Partie %s enregistrée (%s, %d coups)", partie_id, raison, partie.coups)
+
+
+async def _cloturer_tables_abandonnees() -> int:
+    """Clos une partie que plus personne ne regarde.
+
+    En `attente`, l'expiration relève de `GestionnaireTables.nettoyer()`. En
+    `en_jeu`, il ne faut pas laisser une partie tourner indéfiniment à coups
+    automatiques sans aucun joueur connecté : après le délai de grâce (30 s,
+    celui laissé à la reconnexion), elle est close en `abandon`. Le lot C
+    remplacera cette clôture par la prise de main des bots.
+    """
+    cloturees = 0
+    for code in tables.codes():
+        table = tables.obtenir(code)
+        if table.etat != "en_jeu" or table.partie is None or table.a_des_sockets():
+            continue
+        deconnectes = [s.deconnecte_le or 0.0 for s in table.sieges]
+        if not deconnectes:
+            continue
+        if time.time() - max(deconnectes) > cfg.grace_deconnexion_s:
+            await table.partie.finir("abandon")
+            cloturees += 1
+    return cloturees
+
+
+# ---------------------------------------------------------------------------
 # WebSocket
 # ---------------------------------------------------------------------------
 @app.websocket("/ws")
