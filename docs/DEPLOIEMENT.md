@@ -164,14 +164,19 @@ sudo systemctl enable --now corsian-sauvegarde.timer
 
 ## 5. nginx
 
-### 5.1 ⏳ Blocs à ajouter au vhost `soft.opik.net` (443)
+### 5.1 ✅ Blocs API posés dans le vhost `soft.opik.net` (443)
 
-Voir `ARCHITECTURE.md` §4.3 pour le texte exact. En résumé :
+Texte exact dans `ARCHITECTURE.md` §4.3. En place :
 
 ```nginx
-location /corsian-battle/api/auth/ { proxy_pass http://127.0.0.1:8111/api/auth/; … }
-location /corsian-battle/api/jeu/  { proxy_pass http://127.0.0.1:8112/api/jeu/;  … }
+location ^~ /corsian-battle/api/auth/ { proxy_pass http://127.0.0.1:8111/api/auth/; … }   # 30s / 60s
+location ^~ /corsian-battle/api/jeu/  { proxy_pass http://127.0.0.1:8112/api/jeu/;  … }   # 60s / 60s
 ```
+
+Les deux utilisent `^~` (priorité sur toute expression régulière du vhost) et
+transmettent `X-Real-IP`, `X-Forwarded-For` et `X-Forwarded-Proto` — les services
+s'en servent pour les limites de débit, d'où `--proxy-headers
+--forwarded-allow-ips 127.0.0.1` côté uvicorn.
 
 ### 5.2 ✅ `location` WS existant — une seule directive à ajouter
 
