@@ -22,7 +22,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bataille_corse.cartes import CODES_RANG, Carte  # noqa: E402
 from bataille_corse.moteur import BatailleCorse  # noqa: E402
-from bataille_corse.resolveur_tape import ResolveurTape  # noqa: E402
+from bataille_corse.resolveur_tape import (  # noqa: E402
+    ResolveurSimulationBots,
+    ResolveurTape,
+)
 from serveur.commun.config import config_jeu  # noqa: E402
 from serveur.jeu import evenements  # noqa: E402
 from serveur.jeu.partie import PartieEnLigne  # noqa: E402
