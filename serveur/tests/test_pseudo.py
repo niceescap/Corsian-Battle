@@ -136,7 +136,7 @@ def test_cle_uniq_neutralise_casse_et_accents():
     assert filtre.pseudo_min("Nina") != filtre.pseudo_min("Nino")
 
 
-def test_messages_dereur_existent():
+def test_messages_derreur_tous_renseignes():
     for code in filtre.MESSAGES:
         assert filtre.message_erreur(code)
     assert filtre.message_erreur("inconnu")
