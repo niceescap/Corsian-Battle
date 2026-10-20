@@ -713,8 +713,23 @@ async def _traiter(table: Table, siege: Siege, message: Dict[str, Any]) -> bool:
         await table.partie.poser_carte(siege.numero)
         return True
 
-    if type_ in ("tape", "signaler"):
-        # Lot B : fenêtre de doublon. Étape S4 : signalements.
+    if type_ == "tape":
+        if table.partie is None or not table.partie.attend_tape():
+            # Aucune fenêtre ouverte : ignoré silencieusement, comme prévu par
+            # `PROTOCOLE.md` §10.2 (le message compte quand même dans le débit).
+            return True
+        donnees_tape = message.get("d")
+        delai = donnees_tape.get("delai_ms") if isinstance(donnees_tape, dict) else None
+        _accepte, motif = table.partie.recevoir_tape(siege.numero, delai)
+        if motif and motif != "deja_envoye":
+            journal.info("tape siège=%d table=%s : %s", siege.numero, table.code, motif)
+        # Volontairement AUCUN retour au joueur : lui signaler que son délai est
+        # refusé lui révélerait le plancher physiologique, donc un oracle pour
+        # tricher. Le verdict arrive pour tout le monde via `doublon_resolu`.
+        return True
+
+    if type_ == "signaler":
+        # Étape S4 : signalements et blocages.
         await _envoyer(
             siege.websocket,
             _message_erreur("pas_encore_en_partie", "Pas encore pris en charge par le serveur."),
