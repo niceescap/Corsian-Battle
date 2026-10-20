@@ -243,7 +243,7 @@ def test_lancement_passe_la_table_en_jeu():
     async def scenario():
         table = _table()
         publie = Collecteur()
-        partie = PartieEnLigne(table, publie, config_jeu(), seed=4242)
+        partie = PartieSansFenetre(table, publie, config_jeu(), seed=4242)
         await partie.lancer()
         partie.detruire()
         return table, publie, partie
@@ -263,7 +263,7 @@ def test_chaque_siege_recoit_sa_carte_en_prive():
     async def scenario():
         table = _table()
         publie = Collecteur()
-        partie = PartieEnLigne(table, publie, config_jeu(), seed=4242)
+        partie = PartieSansFenetre(table, publie, config_jeu(), seed=4242)
         await partie.lancer()
         partie.detruire()
         return publie
@@ -280,7 +280,7 @@ def test_aucune_carte_adverse_ne_fuit_dans_les_messages_publics():
     async def scenario():
         table = _table()
         publie = Collecteur()
-        partie = PartieEnLigne(table, publie, config_jeu(), seed=17)
+        partie = PartieSansFenetre(table, publie, config_jeu(), seed=17)
         await partie.lancer()
         for _ in range(30):
             if partie.termine:
@@ -309,7 +309,7 @@ def test_hors_tour_refuse_et_tour_accepte():
     async def scenario():
         table = _table()
         publie = Collecteur()
-        partie = PartieEnLigne(table, publie, config_jeu(), seed=3)
+        partie = PartieSansFenetre(table, publie, config_jeu(), seed=3)
         await partie.lancer()
         tour = partie.tour_courant()
         autre = 1 if tour == 0 else 0
@@ -336,7 +336,7 @@ def test_partie_complete_jusqu_a_la_fin():
         async def sur_fin(partie, raison, gagnant):
             fin.append((raison, gagnant))
 
-        partie = PartieEnLigne(table, publie, config_jeu(), seed=20260916, sur_fin=sur_fin)
+        partie = PartieSansFenetre(table, publie, config_jeu(), seed=20260916, sur_fin=sur_fin)
         # Doublons arbitrés par le résolveur de référence : la partie peut se
         # terminer. Avec `ResolveurAucuneTape` (lot A), les plis ne tombent que
         # sur défi manqué et une partie peut durer très longtemps.
@@ -370,7 +370,7 @@ def test_index_moteur_traduits_en_numeros_de_siege():
         table = _table("table_quatre", occupes=((1, "j1", "Nina"), (2, "j2", "Marc")))
         table.createur_id = "j1"
         publie = Collecteur()
-        partie = PartieEnLigne(table, publie, config_jeu(), seed=8)
+        partie = PartieSansFenetre(table, publie, config_jeu(), seed=8)
         await partie.lancer()
         await partie.jouer(auto=True)
         partie.detruire()
