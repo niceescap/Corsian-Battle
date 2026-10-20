@@ -64,7 +64,14 @@ def _appel(methode: str, url: str, corps: Optional[dict] = None, jeton: Optional
         raise SystemExit(f"Serveur injoignable sur {url} : {erreur.reason}") from erreur
 
 
-def creer_compte(base_auth: str, index: int, sans_auth: bool) -> Dict[str, Any]:
+def creer_compte(base_auth: str, index: int, sans_auth: bool, reutiliser: bool = False) -> Dict[str, Any]:
+    """Crée — ou retrouve — un compte invité.
+
+    Avec `reutiliser`, l'`uuid_appareil` est fixe : `POST /api/auth/invite` est
+    idempotent, donc aucun compte n'est créé après le premier passage. C'est la
+    seule façon d'enchaîner les parties sans buter sur la limite de création de
+    comptes (5/h/IP par défaut → `429` dès la deuxième partie à 4 joueurs).
+    """
     if sans_auth:
         return {
             "id": f"dev-{index}",
@@ -72,7 +79,9 @@ def creer_compte(base_auth: str, index: int, sans_auth: bool) -> Dict[str, Any]:
             "jeton_acces": f"dev-{index}",
             "nouveau_compte": True,
         }
-    uuid_appareil = f"headless-{uuid.uuid4().hex[:16]}"
+    uuid_appareil = (
+        f"headless-fixe-{index}" if reutiliser else f"headless-{uuid.uuid4().hex[:16]}"
+    )
     reponse = _appel(
         "POST",
         f"{base_auth}/api/auth/invite",
