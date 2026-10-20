@@ -38,8 +38,12 @@ roues préconstruites pour linux/x86_64.
 ./serveur/lancer_local.sh          # les deux services en premier plan, Ctrl-C arrête tout
 ```
 
-Le script crée `./var/corsian.db`, génère une clé RS256 de **développement** si
-absente, et démarre :
+Le script crée `./var/corsian.db` (schéma appliqué par la migration `001`) et,
+**au tout premier lancement uniquement**, génère la clé RS256 de développement
+dans `./var/cles/auth-rs256.pem` (`chmod 600`, un `WARNING` est journalisé à
+cette occasion — c'est normal). Aucun `openssl` manuel n'est requis en dev ; en
+production il l'est (`docs/DEPLOIEMENT.md` §3, et `ENVIRONNEMENT=prod` refuse de
+démarrer sans clé). Le script démarre ensuite :
 
 - `corsian-auth` sur `127.0.0.1:8111`
 - `corsian-jeu` sur `127.0.0.1:8112`
