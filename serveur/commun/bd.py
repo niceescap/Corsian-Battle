@@ -39,9 +39,9 @@ PRAGMATIQUES: tuple[str, ...] = (
 
 def maintenant_iso(decalage_s: float = 0.0) -> str:
     """Horodatage UTC ISO-8601 au format utilisé par le schéma."""
-    return time.strftime(
-        "%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() + decalage_s)
-    ) + f".{int((time.time() + decalage_s) % 1 * 1000):03d}Z"
+    instant = time.time() + decalage_s
+    millisecondes = int((instant % 1) * 1000)
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(instant)) + f".{millisecondes:03d}Z"
 
 
 def dossier_migrations() -> Path:
