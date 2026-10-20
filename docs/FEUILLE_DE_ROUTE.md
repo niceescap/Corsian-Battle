@@ -159,5 +159,7 @@ Travaux sans aucune dépendance à la topologie nginx/ports — à autoriser au 
 1. Nom de paquet final : `fr.niceescap.bataille_corse` (existant) ou `fr.niceescap.corsianbattle`.
 2. Adresse électronique de contact pour la politique de confidentialité et le support.
 3. Publicité : V1 sans AdMob (recommandé, `CONFORMITE.md` §9) ou avec.
-4. Sous-domaine dédié (`jeu.opik.net`) ou conservation de `soft.opik.net/corsian-battle/`.
+4. ✅ **Tranché** — `soft.opik.net/corsian-battle/` en V1 (nginx déjà câblé, aucun certificat à
+   émettre) ; `jeu.opik.net` reporté en V2, seulement si un besoin concret apparaît (App Links
+   natifs, cookies de premier niveau, isolation des limites de débit).
 5. Unicité stricte des pseudos en V1 (choix actuel) ou pseudos libres avec discriminant.
