@@ -95,20 +95,36 @@ curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" \
 
 ```bash
 # Sans pytest, depuis n'importe quel dossier :
-python3 serveur/tests/test_pseudo.py
-python3 serveur/tests/test_moteur_nonregression.py
-python3 serveur/tests/test_resolveur_reseau.py
+python3 serveur/tests/test_pseudo.py                  # filtre UGC
+python3 serveur/tests/test_moteur_nonregression.py    # les règles, dont « personne n'a tapé »
+python3 serveur/tests/test_resolveur_reseau.py        # fenêtre de tape, plausibilité
+python3 serveur/tests/test_boucle_coups.py            # boucle de coups, diffusion, sièges
 
 # Avec pytest (optionnel) :
 .venv/bin/python -m pytest serveur/tests -q
 ```
 
 `test_moteur_nonregression.py` verrouille les règles déjà validées sur
-téléphone **et** le nouveau cas « personne n'a tapé ». À rejouer avant tout
-déploiement : c'est le seul filet qui garantit que le serveur arbitre comme
-l'app hors-ligne.
+téléphone **et** le cas « personne n'a tapé ». À rejouer avant tout
+déploiement : c'est le filet qui garantit que le serveur arbitre comme l'app
+hors-ligne. Le moteur seul reste vérifiable par `python3 demo.py`.
 
-Le moteur seul (hors serveur) reste vérifiable par `python3 demo.py`.
+### Recette de bout en bout, sans l'app
+
+Deux services lancés, puis dans un autre terminal :
+
+```bash
+python3 serveur/tests/client_headless.py --joueurs 2 --verbeux
+python3 serveur/tests/client_headless.py --joueurs 4 --parties 3
+python3 serveur/tests/client_headless.py --auth https://soft.opik.net/corsian-battle \
+                                        --jeu  https://soft.opik.net/corsian-battle
+```
+
+Le client crée les comptes invités, ouvre une table, fait asseoir tout le
+monde, se déclare prêt, puis joue jusqu'à `partie_finie` en imprimant le
+transcript (messages privés marqués `[privé]`). Il répond déjà `tape` à
+`doublon_ouvert`, donc il recettera le lot B sans modification. Code de sortie
+`0` si toutes les parties sont menées à leur terme.
 
 ## 5. Ce qui est implémenté — et ce qui ne l'est pas encore
 
