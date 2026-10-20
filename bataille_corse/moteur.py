@@ -110,8 +110,18 @@ class BatailleCorse:
     def _est_doublon(self) -> bool:
         return len(self.pli) >= 2 and self.pli[-1].rang == self.pli[-2].rang
 
-    def _resoudre_doublon(self) -> Joueur:
+    def _resoudre_doublon(self) -> Optional[Joueur]:
+        """Attribue le pli au premier qui tape, ou renvoie ``None``.
+
+        ``None`` signifie que le résolveur a conclu que **personne n'a
+        tapé** : l'état de la partie n'est alors pas modifié (le pli reste
+        en jeu, le tour n'est pas réattribué) et l'appelant reprend le
+        traitement normal de la carte posée.
+        """
         gagnant = self.resolveur_tape.determiner_gagnant(self.joueurs)
+        if gagnant is None:
+            self.historique.append("Doublon non tapé : le jeu continue.")
+            return None
         taille_pli = len(self.pli) + len(self.cartes_reste_neutres)
         self.historique.append(
             f"Doublon ! {gagnant.nom} tape et remporte {taille_pli} carte(s)."
