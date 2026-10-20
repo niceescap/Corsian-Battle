@@ -9,7 +9,14 @@ qui tape — il délègue ça à un ResolveurTape. Ça permet de brancher :
   délai mesuré localement entre le début de l'animation de dépose (le
   "reveal") et l'appui du joueur — chaque appli timecode son propre écart,
   ce qui évite de comparer des horloges murales entre appareils. Le
-  résolveur réseau n'a alors qu'à choisir le délai le plus court reçu.
+  résolveur réseau n'a alors qu'à choisir le délai le plus court reçu
+  (implémenté dans `serveur/jeu/resolveur_reseau.py`).
+
+Un résolveur peut aussi conclure que **personne** n'a tapé et renvoyer
+`None` : le moteur laisse alors passer le doublon — le pli n'est attribué
+à personne et la carte posée reprend son traitement normal. Le résolveur
+de simulation ne renvoie jamais `None`, donc `demo.py` et toutes les
+simulations existantes conservent un comportement strictement identique.
 
 Dans les deux cas, l'interface exposée au moteur est la même :
 `determiner_gagnant(eligibles) -> Joueur`.
@@ -29,9 +36,13 @@ class ResolveurTape:
 
     Tous les joueurs sont éligibles, même ceux sans carte en main (ils
     peuvent taper pour revenir en jeu).
+
+    Renvoyer ``None`` signifie « personne n'a tapé » : le moteur laisse
+    passer le doublon, n'attribue le pli à personne, et la carte qui vient
+    d'être posée reprend son traitement normal (figure, défi, rotation).
     """
 
-    def determiner_gagnant(self, eligibles: List["Joueur"]) -> "Joueur":
+    def determiner_gagnant(self, eligibles: List["Joueur"]) -> Optional["Joueur"]:
         raise NotImplementedError
 
 

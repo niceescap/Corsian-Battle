@@ -1,0 +1,19 @@
+# Corsian-Battle — dépendances serveur (Python 3.12 sur noe)
+#
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r serveur/requirements.txt
+#
+# Volontairement minimal :
+#   - la base est SQLite (bibliothèque standard), aucun serveur de données ;
+#   - uvicorn[standard] fournit `websockets`, indispensable au endpoint /ws ;
+#   - cryptography sert uniquement à la paire de clés RS256 (signature JWT) ;
+#   - argon2-cffi n'arrive qu'avec le rattachement email/mot de passe (S1
+#     complet) : les comptes invités n'en ont pas besoin.
+#
+# Aucune de ces roues n'est exotique sur linux/x86_64 : pip les installe sans
+# compilateur, ce qui compte sur une machine dont le swap est déjà entamé.
+
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
+PyJWT>=2.9,<3.0
+cryptography>=43.0

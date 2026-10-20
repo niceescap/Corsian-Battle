@@ -110,8 +110,18 @@ class BatailleCorse:
     def _est_doublon(self) -> bool:
         return len(self.pli) >= 2 and self.pli[-1].rang == self.pli[-2].rang
 
-    def _resoudre_doublon(self) -> Joueur:
+    def _resoudre_doublon(self) -> Optional[Joueur]:
+        """Attribue le pli au premier qui tape, ou renvoie ``None``.
+
+        ``None`` signifie que le résolveur a conclu que **personne n'a
+        tapé** : l'état de la partie n'est alors pas modifié (le pli reste
+        en jeu, le tour n'est pas réattribué) et l'appelant reprend le
+        traitement normal de la carte posée.
+        """
         gagnant = self.resolveur_tape.determiner_gagnant(self.joueurs)
+        if gagnant is None:
+            self.historique.append("Doublon non tapé : le jeu continue.")
+            return None
         taille_pli = len(self.pli) + len(self.cartes_reste_neutres)
         self.historique.append(
             f"Doublon ! {gagnant.nom} tape et remporte {taille_pli} carte(s)."
@@ -153,8 +163,10 @@ class BatailleCorse:
         self.historique.append(f"{joueur.nom} joue {carte}.")
 
         # 1) Le doublon est TOUJOURS prioritaire, même en plein défi.
-        if self._est_doublon():
-            self._resoudre_doublon()
+        #    Si personne n'a tapé (résolveur réseau renvoyant None), le
+        #    doublon passe : on enchaîne sur le traitement normal de la
+        #    carte posée ci-dessous, comme à la table physique.
+        if self._est_doublon() and self._resoudre_doublon() is not None:
             return
 
         # 2) Une figure (re)lance ou fait rebondir le défi, qu'il y en ait
