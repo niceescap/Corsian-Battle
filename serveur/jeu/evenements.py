@@ -103,7 +103,9 @@ class Coup:
     evenements: List[Dict[str, Any]] = field(default_factory=list)
 
 
-def jouer_coup(jeu: Any, auto: bool = False) -> Optional[Coup]:
+def jouer_coup(
+    jeu: Any, auto: bool = False, doublon_resolu: Optional[bool] = None
+) -> Optional[Coup]:
     """Actionne le moteur une fois et traduit le changement d'état.
 
     Renvoie `None` si plus personne ne peut jouer avant même le coup (tas
@@ -112,6 +114,20 @@ def jouer_coup(jeu: Any, auto: bool = False) -> Optional[Coup]:
 
     `auto` marque le coup comme joué par le serveur à l'expiration du délai de
     tour (`docs/PROTOCOLE.md` §7.1) — l'app l'affiche par un pictogramme.
+
+    `doublon_resolu` est le verdict de la fenêtre de tape, quand l'appelant la
+    connaît (`True` = quelqu'un a tapé, `False` = personne) :
+
+    - `True`  → le pli est attribué par la tape, raison `doublon` ;
+    - `False` → événement `doublon_non_tape`, et si un pli tombe quand même sur
+      ce coup c'est qu'un défi a échoué : raison `defi_manque` ;
+    - `None`  → l'appelant ne sait pas (résolveur de simulation, tests) : on le
+      déduit, un pli attribué sur un coup de doublon ne pouvant l'être que par
+      la tape.
+
+    Sans ce paramètre, un doublon **non tapé** qui fermait aussi un défi était
+    étiqueté `doublon` alors que le pli revenait au poseur de figure : c'était
+    exactement l'ambiguïté relevée en recette du lot A.
     """
     avant = Etat.capturer(jeu)
     index = siege_effectif(jeu, avant.index_courant)
