@@ -36,9 +36,13 @@ class ResolveurTape:
 
     Tous les joueurs sont éligibles, même ceux sans carte en main (ils
     peuvent taper pour revenir en jeu).
+
+    Renvoyer ``None`` signifie « personne n'a tapé » : le moteur laisse
+    passer le doublon, n'attribue le pli à personne, et la carte qui vient
+    d'être posée reprend son traitement normal (figure, défi, rotation).
     """
 
-    def determiner_gagnant(self, eligibles: List["Joueur"]) -> "Joueur":
+    def determiner_gagnant(self, eligibles: List["Joueur"]) -> Optional["Joueur"]:
         raise NotImplementedError
 
 
