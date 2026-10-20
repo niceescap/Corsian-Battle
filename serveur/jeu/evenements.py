@@ -164,17 +164,21 @@ def jouer_coup(jeu: Any, auto: bool = False) -> Optional[Coup]:
             )
 
     # --- pli attribué ou doublon passé ----------------------------------
-    pli_attribue = bool(avant.pli) and not apres.pli
+    # Détection par le total des mains : un coup retire exactement une carte
+    # d'une main, donc `delta >= 0` signifie qu'un pli (>= 1 carte) a été
+    # redistribué. Le nombre de cartes gagnées vaut alors `delta + 1`, carte
+    # posée pendant ce coup et reste neutre compris.
+    delta_mains = sum(apres.tailles) - sum(avant.tailles)
+    pli_attribue = delta_mains >= 0
     if pli_attribue:
-        deltas = [apres - avant for avant, apres in zip(avant.tailles, apres.tailles)]
+        deltas = [b - a for a, b in zip(avant.tailles, apres.tailles)]
         gagnant = next((i for i, delta in enumerate(deltas) if delta > 0), None)
         if gagnant is None:
             # Cas limite : le poseur gagne un pli d'une seule carte (défi clos
-            # immédiatement parce que personne d'autre n'a de carte).
+            # immédiatement parce que personne d'autre n'a de carte) — il rend
+            # d'un côté ce qu'il reçoit de l'autre, son delta vaut 0.
             gagnant = index
-        nb_cartes = (
-            len(avant.pli) + avant.reste_neutre - len(apres.pli) - apres.reste_neutre
-        )
+        nb_cartes = delta_mains + 1
         coup.pli_gagne = {
             "gagnant": gagnant,
             "nb_cartes": nb_cartes,
