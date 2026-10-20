@@ -342,10 +342,15 @@ appliquée (aucun mot en jeu, pictogrammes universels) vaut aussi pour le résea
   TestFlight, ce qui suppose un compte Apple Developer et un accès à un Mac. Le site affiche un
   encart « iOS : TestFlight — bientôt » plutôt qu'un bouton mort. Voir `CONFORMITE.md` §6.
 
-## 11. ⏳ Points bloquants à trancher
+## 11. Points bloquants — état
 
-1. Contenu réel de `/home/nicee/agent/softopik/projects/corsian-battle/` (`ls -la`).
-2. Ajout des deux blocs `location` API (§4.3) et des en-têtes d'upgrade + timeout long sur le
-   `location` WS existant.
-3. Validation du budget mémoire : 2 × ~80 Mo alors que le swap est déjà à 1,9 Go sur 3,6 Go.
-   Si nécessaire, arbitrer ce qui peut être arrêté pendant les phases de test (ollama ?).
+1. ✅ **Racine statique vérifiée** : `index.html` (landing officielle, 15 Ko) et `static/`
+   (`logo_og.png`, `logo_site.png`) sont présents et **conservés tels quels** (§4.4).
+2. ⏳ **Ajout des deux blocs `location` API** (§4.3) et de la directive **`proxy_buffering off`**
+   dans le `location` WS existant (§4.2).
+3. ⏳ **Validation du budget mémoire** : 2 × ~80 Mo alors que le swap est déjà à 1,9 Go sur
+   3,6 Go. Si nécessaire, arbitrer ce qui peut être arrêté pendant les phases de test (ollama ?).
+4. ✅ **Domaine tranché** : `soft.opik.net/corsian-battle/` en V1 ; `jeu.opik.net` reporté en V2,
+   seulement si un besoin concret apparaît (App Links natifs, cookies de premier niveau,
+   isolation des limites de débit). Le préfixe public n'est injecté que par la variable
+   `PREFIXE_PUBLIC` : un changement de domaine ne touchera alors ni le code ni l'app.
