@@ -469,20 +469,55 @@ def _ecrire_partie(partie: PartieEnLigne, raison: str, gagnant_siege) -> None:
             nb_doublons=partie.doublons_ouverts,
             duree_ms=int((time.time() - partie.lance_le) * 1000),
         )
-        for numero in partie.par_index:
-            siege = table.siege(numero)
+        for ligne in partie.statistiques():
+            siege = table.siege(ligne["siege"])
             if siege is None:
                 continue
             bd.creer_participation(
                 conn,
                 partie_id=partie_id,
-                siege=numero,
+                siege=ligne["siege"],
                 joueur_id=siege.joueur_id,
                 pseudo_affiche=siege.pseudo,
                 est_bot=siege.est_bot,
-                nb_cartes_final=siege.nb_cartes,
+                nb_cartes_final=ligne["nb_cartes"],
+                doublons_gagnes=ligne["doublons_gagnes"],
+                doublons_perdus=ligne["doublons_perdus"],
+                tapes_manquees=ligne["tapes_manquees"],
+                delai_tape_median_ms=ligne["delai_tape_median_ms"],
             )
     journal.info("Partie %s enregistrée (%s, %d coups)", partie_id, raison, partie.coups)
+
+
+# Valeurs acceptées par la contrainte CHECK de `suspicions.type`
+# (`serveur/migrations/001_initial.sql`). Tout motif hors liste est ramené à
+# `delai_impossible` : une écriture en base ne doit jamais échouer à cause
+# d'un vocabulaire interne. À élargir par une migration 002 si besoin.
+_TYPES_SUSPICION = ("delai_impossible", "delai_sous_plancher", "rafale_messages", "coup_perime")
+
+
+async def _consigner_suspicions(table: Table, suspects: List[Dict[str, Any]]) -> None:
+    await asyncio.to_thread(_ecrire_suspicions, table, suspects)
+
+
+def _ecrire_suspicions(table: Table, suspects: List[Dict[str, Any]]) -> None:
+    with bd.connexion(cfg.base_chemin) as conn:
+        for suspect in suspects:
+            siege = table.siege(suspect.get("siege"))
+            joueur_id = siege.joueur_id if siege is not None else None
+            if not joueur_id:
+                continue                     # bot ou siège libéré : rien à consigner
+            motif = suspect.get("type")
+            bd.enregistrer_suspicion(
+                conn,
+                suspicion_id=uuid.uuid4().hex,
+                joueur_id=joueur_id,
+                type_suspicion=motif if motif in _TYPES_SUSPICION else "delai_impossible",
+                valeur_ms=suspect.get("valeur_ms"),
+            )
+    journal.warning(
+        "Table %s : %d suspicion(s) de tape consignée(s)", table.code, len(suspects)
+    )
 
 
 async def _cloturer_tables_abandonnees() -> int:
