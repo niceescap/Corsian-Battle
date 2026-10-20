@@ -332,7 +332,7 @@ def invite(corps: InviteRequete, request: Request) -> JSONResponse:
                         conn, appareil_id, joueur_id, corps.uuid_appareil,
                         corps.plateforme, corps.version_app,
                     )
-                except sqlite3.IntegrityError:
+                except bd.ErreurIntegrite:
                     # Course entre deux demandes : le pseudo a été pris entre-temps.
                     raise ErreurApi("pseudo_indisponible", "Ce pseudo est déjà pris.", 409)
                 joueur = bd.joueur_par_id(conn, joueur_id) or {
