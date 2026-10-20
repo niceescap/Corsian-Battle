@@ -46,8 +46,13 @@ demo.py                inchangé — valide le moteur hors ligne
   logs/                     journaux applicatifs (si besoin en plus de journald)
 
 /home/nicee/agent/softopik/projects/corsian-battle/    ← racine statique nginx (déjà déclarée)
-  index.html              ⏳ contenu existant à vérifier
-  privacy.html  terms.html  suppression-compte.html
+  index.html              ✅ landing officielle, 15 Ko — À CONSERVER TEL QUEL
+  static/                 ✅ logo_og.png, logo_site.png — la landing en dépend : ne pas
+                             renommer ni déplacer ces deux fichiers
+  privacy.html            à créer (nom réservé par la spec)
+  terms.html              à créer
+  suppression-compte.html à créer
+  support.html            à créer
   apk/                    binaires Android signés à télécharger
   aab/                    (usage interne : téléversement Play Console)
 ```
