@@ -27,6 +27,13 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
+# Aliases exposés aux services : `bd` reste le **seul** module du dépôt qui
+# importe `sqlite3`. Ailleurs on écrit `bd.Connexion` (annotations) et
+# `bd.ErreurIntegrite` (contrainte d'unicité violée), ce qui garantit qu'un
+# futur passage à SQLAlchemy Core ne touchera que ce fichier.
+Connexion = sqlite3.Connection
+ErreurIntegrite = sqlite3.IntegrityError
+
 PRAGMATIQUES: tuple[str, ...] = (
     "PRAGMA journal_mode = WAL",
     "PRAGMA synchronous = NORMAL",
