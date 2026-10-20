@@ -167,12 +167,13 @@ transcript (messages privés marqués `[privé]`). Il répond déjà `tape` à
 | Persistance | partie terminée + participations écrites en base, dans un thread, sans bloquer la boucle |
 | Recette sans l'app | `tests/client_headless.py` joue des parties complètes en WebSocket |
 
-**Pas encore (lot B → S4)**
+| **Fenêtre de doublon (lot B)** | prédiction avant le coup → `doublon_ouvert` → collecte ≤ 900 ms → `carte_posee`(`annonce:true`) → `doublon_resolu` → `pli_gagne` ; clôture anticipée dès que tous les sièges connectés ont répondu |
+| Anti-triche de la tape | plancher 120 ms, rejet < 100 ms, premier envoi seul retenu, **aucun retour au joueur** (pas d'oracle sur le plancher), suspicions consignées en base |
+| Stats de tape par siège | doublons gagnés/perdus, tapes manquées, délai médian → `partie_finie` **et** table `participations` |
+| Raison du pli exacte | `doublon` (celui qui a tapé) vs `defi_manque` (dernier poseur de figure), y compris quand les deux tombent sur le même coup |
 
-- **fenêtre de doublon en conditions réelles** : `doublon_ouvert` → collecte des
-  `tape` → `doublon_resolu`, avec consignation des suspicions en base. Le
-  résolveur est écrit et testé ; il ne reste qu'à l'installer à la place de
-  `ResolveurAucuneTape` ;
+**Pas encore (lot C → S4)**
+
 - **bots de remplacement** après 30 s de déconnexion, et reconnexion sur
   instantané en cours de partie ;
 - connexion email/mot de passe (argon2id) et rattachement d'email ;
@@ -180,12 +181,11 @@ transcript (messages privés marqués `[privé]`). Il répond déjà `tape` à
 - instantanés de reprise dans `tables_snapshot` ;
 - matchmaking, historique, classement, signalements et blocages.
 
-⚠️ **Limite assumée du lot A** : les doublons passent **sans effet** — le
-résolveur installé est `ResolveurAucuneTape`, qui emprunte le chemin
-« personne n'a tapé » du moteur. Une partie en ligne reste jouable et se
-termine normalement (les plis tombent sur défi manqué), mais l'arme principale
-du jeu n'est pas encore active. C'est précisément ce que le lot B remplace,
-sans aucun autre changement.
+⚠️ **Ordre des messages sur un doublon** : `doublon_ouvert` arrive **avant**
+`carte_posee`, et ce dernier porte `annonce: true` — le client anime la carte
+depuis `doublon_ouvert.cartes[1]` et ne doit pas rejouer l'animation au
+`carte_posee`. Détails et justification dans `docs/PROTOCOLE.md` §10.1, et
+sémantique de `pli_gagne.raison` au §10.1bis.
 
 ## 6. Points de vigilance
 
