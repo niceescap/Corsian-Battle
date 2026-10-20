@@ -151,7 +151,10 @@ class Joueur:
         ce code est déjà prêt pour le lot B.
         """
         delai = int(random.uniform(180, min(450, max(fenetre_ms - 50, 200))))
-        await asyncio.sleep(delai / 1000.0)
+        if not self.rapide:
+            # En mode rapide on n'attend pas, mais on annonce quand même un
+            # délai plausible : c'est cette valeur que le serveur compare.
+            await asyncio.sleep(delai / 1000.0)
         await socket.send(json.dumps({"type": "tape", "d": {"delai_ms": delai}}))
         self.tapes += 1
         self.log(f"TAPE ({delai} ms)")
