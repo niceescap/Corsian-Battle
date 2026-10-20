@@ -140,6 +140,13 @@ def jouer_coup(
 
     jeu.jouer_un_coup()
 
+    # Le verdict de la tape n'est connu qu'APRÈS le coup (c'est le moteur qui
+    # appelle le résolveur, à l'intérieur de jouer_un_coup). L'appelant peut
+    # donc passer un booléen déjà établi **ou** un callable évalué ici — c'est
+    # ce que fait `PartieEnLigne` avec son résolveur observé.
+    if callable(doublon_resolu):
+        doublon_resolu = doublon_resolu()
+
     apres = Etat.capturer(jeu)
     coup = Coup(
         siege=index,
