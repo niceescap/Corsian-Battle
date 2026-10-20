@@ -115,6 +115,19 @@ def _table(type_partie: str = "duel", occupes=((0, "j1", "Nina"), (1, "j2", "Mar
     return table
 
 
+class PartieSansFenetre(PartieEnLigne):
+    """`PartieEnLigne` avec la fenêtre de doublon désactivée.
+
+    Ces tests jouent **sans sockets** : personne ne peut envoyer `tape`, donc la
+    fenêtre attendrait ses 900 ms à vide à chaque doublon. La fenêtre réelle est
+    testée à part, dans `test_fenetre_doublon.py`.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fenetre_active = False
+
+
 # ---------------------------------------------------------------------------
 # 1. evenements.jouer_coup
 # ---------------------------------------------------------------------------
