@@ -478,16 +478,14 @@ class PartieEnLigne:
                 if self.fenetre_active:
                     fenetre = True
                     resolveur = await self._fenetre_doublon(previsionable)
-            self.jeu.resolveur_tape = resolveur
-            doublon_resolu: Optional[bool] = (
-                resolveur.nb_retenu() > 0
-                if isinstance(resolveur, ResolveurTapeReseau)
-                else None
-            )
+            observe = ObservateurResolveur(resolveur)
+            self.jeu.resolveur_tape = observe
 
-            # 2) Le coup, moteur inchangé.
+            # 2) Le coup, moteur inchangé. Le verdict de la tape est lu APRÈS
+            #    le coup via l'observateur : c'est exact quel que soit le
+            #    résolveur (réseau, simulation, « personne ne tape »).
             coup = evenements.jouer_coup(
-                self.jeu, auto=auto, doublon_resolu=doublon_resolu
+                self.jeu, auto=auto, doublon_resolu=observe.tape_reussie
             )
             if coup is None:
                 await self.finir("partie_nulle")
