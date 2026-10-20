@@ -178,11 +178,11 @@ transmettent `X-Real-IP`, `X-Forwarded-For` et `X-Forwarded-Proto` — les servi
 s'en servent pour les limites de débit, d'où `--proxy-headers
 --forwarded-allow-ips 127.0.0.1` côté uvicorn.
 
-### 5.2 ✅ `location` WS existant — une seule directive à ajouter
+### 5.2 ✅ `location` WS existant — `proxy_buffering off` ajouté
 
-Le bloc `location ^~ /corsian-battle/ws` est **déjà en place et correct** : chemin
+Le bloc `location ^~ /corsian-battle/ws` est **en place et complet** : chemin
 (`proxy_pass http://127.0.0.1:8112/ws` → backend `/ws`), `proxy_http_version 1.1`, en-têtes
-`Upgrade`/`Connection`, timeouts longs. Rien à reprendre. État actuel, pour référence :
+`Upgrade`/`Connection`, timeouts de 3600 s et `proxy_buffering off`. État cible, pour référence :
 
 ```nginx
 location ^~ /corsian-battle/ws {
