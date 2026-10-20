@@ -102,8 +102,9 @@ location ^~ /corsian-battle/ws    { proxy_pass http://127.0.0.1:8112/ws; }   # W
 ```
 
 Le `proxy_pass` se terminant par `/ws`, nginx **strippe le préfixe** : le backend doit donc
-déclarer l'handshake sur **`/ws`** (choix retenu, `@app.websocket("/ws")`). Aucune modification
-nginx n'est nécessaire pour le WebSocket.
+déclarer l'handshake sur **`/ws`** (choix retenu, `@app.websocket("/ws")`). Ce bloc est
+fonctionnel en l'état — une seule directive y manque, `proxy_buffering off`
+(`DEPLOIEMENT.md` §5.2).
 
 ### 4.3 ⏳ À ajouter dans nginx (proposition, en attente de validation)
 
