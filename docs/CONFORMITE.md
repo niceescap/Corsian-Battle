@@ -259,13 +259,14 @@ refaire le jour où un Mac est disponible.
 
 | Page | Contenu | Statut |
 |---|---|---|
-| `index.html#download` | Présentation, APK + empreinte SHA-256, lien Play, encart iOS | ⏳ existence à vérifier |
+| `index.html#download` | **Landing officielle existante (15 Ko)** : présentation, APK + empreinte SHA-256, lien Play, encart iOS | ✅ en place — **à conserver telle quelle** |
+| `static/logo_og.png` · `static/logo_site.png` | Identité visuelle référencée par la landing (partage Open Graph + en-tête) | ✅ en place — ne pas renommer ni déplacer |
 | `privacy.html` | Texte du §3.3 | à créer |
 | `terms.html` | Conditions d'utilisation (licence d'usage, interdiction de triche, absence de garantie, droit applicable) | à créer |
 | `suppression-compte.html` | Formulaire à deux voies (§5) | à créer |
 | `support.html` | Contact, FAQ (installation d'un APK, code de table, déconnexion) | à créer |
-| `#table=CODE` | Affichage du code d'invitation en très grand, consigne d'ouverture de l'app | à créer |
+| `#table=CODE` | Affichage du code d'invitation en très grand, consigne d'ouverture de l'app | à **ajouter** à la landing par diff proposé |
 | `apk/` | Binaires signés | à créer |
 
-Règle : **aucun fichier existant n'est écrasé** tant que le `ls -la` du dossier n'a pas été
-fait (§10.1 de `DEPLOIEMENT.md`).
+Règle : **strictement additif** — la landing et son dossier `static/` ne sont jamais écrasés ;
+toute évolution de `index.html` passe par un diff proposé et validé (`DEPLOIEMENT.md` §10.1).
