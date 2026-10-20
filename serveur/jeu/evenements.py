@@ -186,6 +186,23 @@ def jouer_coup(
     # posée pendant ce coup et reste neutre compris.
     delta_mains = sum(apres.tailles) - sum(avant.tailles)
     pli_attribue = delta_mains >= 0
+
+    if doublon_resolu is None:
+        # L'appelant ne connaît pas le verdict (résolveur de simulation, tests) :
+        # un pli qui tombe sur un coup de doublon ne peut l'être que par la tape.
+        tape_reussie = bool(etait_doublon and pli_attribue)
+    else:
+        tape_reussie = bool(doublon_resolu)
+
+    if etait_doublon and not tape_reussie:
+        # Le doublon passe. Il peut quand même y avoir un pli attribué sur ce
+        # coup, si la carte posée épuisait les chances d'un défi : les deux
+        # événements sont alors émis, dans cet ordre.
+        coup.doublon_non_tape = True
+        coup.evenements.append(
+            {"type": "doublon_non_tape", "d": {"cartes": [avant.pli[-1], carte]}}
+        )
+
     if pli_attribue:
         deltas = [b - a for a, b in zip(avant.tailles, apres.tailles)]
         gagnant = next((i for i, delta in enumerate(deltas) if delta > 0), None)
@@ -198,17 +215,10 @@ def jouer_coup(
         coup.pli_gagne = {
             "gagnant": gagnant,
             "nb_cartes": nb_cartes,
-            "raison": "doublon" if etait_doublon else "defi_manque",
+            "raison": "doublon" if (pli_attribue and tape_reussie) else "defi_manque",
             "reste_neutre_inclus": avant.reste_neutre > 0 and apres.reste_neutre == 0,
         }
         coup.evenements.append({"type": "pli_gagne", "d": dict(coup.pli_gagne)})
-    elif etait_doublon:
-        # Doublon détecté, pli non attribué : personne n'a tapé (lot A : c'est
-        # systématique ; lot B : seulement si la fenêtre s'est écoulée).
-        coup.doublon_non_tape = True
-        coup.evenements.append(
-            {"type": "doublon_non_tape", "d": {"cartes": [avant.pli[-1], carte]}}
-        )
 
     # --- carte posée, toujours en tête ----------------------------------
     coup.evenements.insert(
