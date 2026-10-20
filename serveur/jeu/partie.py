@@ -477,7 +477,7 @@ class PartieEnLigne:
                 self.doublons_ouverts += 1
                 if self.fenetre_active:
                     fenetre = True
-                    resolveur = await self._fenetre_doublon(previsionable)
+                    resolveur = await self._fenetre_doublon(previsible)
             observe = ObservateurResolveur(resolveur)
             self.jeu.resolveur_tape = observe
 
