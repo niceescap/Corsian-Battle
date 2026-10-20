@@ -196,7 +196,7 @@ location ^~ /corsian-battle/ws {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_read_timeout  3600s;
     proxy_send_timeout  3600s;
-    proxy_buffering     off;          # ← SEULE LIGNE À AJOUTER
+    proxy_buffering     off;          # ← posé : équité du chrono de tape
 }
 ```
 
