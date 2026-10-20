@@ -7,7 +7,8 @@ Règles du jeu : **jamais réimplémentées ici** — `bataille_corse/` reste la
 serveur/
   requirements.txt        fastapi, uvicorn[standard], PyJWT, cryptography
   commun/config.py        lecture de l'environnement (noms de docs/DEPLOIEMENT.md §3)
-  commun/bd.py            SQLite WAL + migrations + suppression RGPD
+  commun/bd.py            SQLite WAL + migrations + suppression RGPD (seul module
+                          qui importe sqlite3 ; ailleurs : bd.Connexion, bd.ErreurIntegrite)
   commun/jwt.py           RS256 : émission (auth), vérification par JWKS (jeu)
   commun/pseudo.py        filtre UGC des pseudos
   commun/limites.py       limiteur de débit glissant
@@ -15,8 +16,11 @@ serveur/
   auth/main.py            corsian-auth  → 127.0.0.1:8111
   jeu/main.py             corsian-jeu   → 127.0.0.1:8112 (REST + WebSocket /ws)
   jeu/table.py            tables en mémoire, sièges, instantanés filtrés
+  jeu/partie.py           PartieEnLigne : moteur + tour + délai de tour + fin
+  jeu/evenements.py       un coup de moteur → événements diffusables (diff d'état)
   jeu/resolveur_reseau.py ResolveurTapeReseau (fenêtre de tape, plausibilité)
   tests/                  exécutables avec pytest **ou** sans aucune dépendance
+  tests/client_headless.py  joue des parties complètes en WebSocket, sans l'app
   lancer_local.sh         démarre les deux services en premier plan
 ```
 
