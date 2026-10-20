@@ -644,18 +644,36 @@ async def _traiter(table: Table, siege: Siege, message: Dict[str, Any]) -> bool:
             table,
             {"type": "joueur_pret", "seq": table.prochain_seq(), "d": {"siege": siege.numero}},
         )
+        if table.tous_prets() and table.partie is None:
+            await _lancer_partie(table)
         return True
 
     if type_ == "quitter":
         return False
 
-    if type_ in ("poser_carte", "tape", "signaler"):
-        # S2/S3 : boucle de coups et fenêtre de doublon. Le message est
-        # reconnu (donc le client peut déjà l'émettre) mais la table n'est pas
-        # encore en jeu.
+    if type_ == "poser_carte":
+        if table.partie is None or table.etat != "en_jeu":
+            await _envoyer(
+                siege.websocket,
+                _message_erreur("pas_encore_en_partie", "La table n'est pas encore en jeu."),
+            )
+            return True
+        if seq_attendu is not None and seq_attendu != table.seq:
+            # Action périmée (double appui, retard) : refusée plutôt que
+            # rejouée — c'est le rôle de `seq_attendu` (`PROTOCOLE.md` §2).
+            await _envoyer(
+                siege.websocket,
+                _message_erreur("coup_perime", "Coup refusé : la table a avancé."),
+            )
+            return True
+        await table.partie.poser_carte(siege.numero)
+        return True
+
+    if type_ in ("tape", "signaler"):
+        # Lot B : fenêtre de doublon. Étape S4 : signalements.
         await _envoyer(
             siege.websocket,
-            _message_erreur("pas_encore_en_partie", "La table n'est pas encore en jeu."),
+            _message_erreur("pas_encore_en_partie", "Pas encore pris en charge par le serveur."),
         )
         return True
 
