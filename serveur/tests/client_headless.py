@@ -115,7 +115,7 @@ def url_ws(base_jeu: str) -> str:
 # Un joueur
 # ---------------------------------------------------------------------------
 class Joueur:
-    def __init__(self, compte: Dict[str, Any], verbeux: bool) -> None:
+    def __init__(self, compte: Dict[str, Any], verbeux: bool, rapide: bool = False) -> None:
         self.compte = compte
         self.pseudo = compte.get("pseudo", "?")
         self.jeton = compte.get("jeton_acces", "")
@@ -126,6 +126,7 @@ class Joueur:
         self.tapes = 0
         self.ma_carte: Optional[str] = None
         self.verbeux = verbeux
+        self.rapide = rapide
 
     def log(self, texte: str) -> None:
         if self.verbeux:
@@ -133,10 +134,12 @@ class Joueur:
 
     async def jouer(self, socket: Any) -> None:
         """Pose sa carte si c'est son tour. Une temporisation courte imite un
-        humain et évite d'enchaîner les coups à la vitesse du serveur."""
+        humain et évite d'enchaîner les coups à la vitesse du serveur ;
+        `--rapide` la supprime pour les recettes de charge."""
         if self.siege is None:
             return
-        await asyncio.sleep(random.uniform(0.05, 0.30))
+        if not self.rapide:
+            await asyncio.sleep(random.uniform(0.05, 0.30))
         await socket.send(json.dumps({"type": "poser_carte"}))
         self.coups_joues += 1
         self.log(f"pose {self.ma_carte or '?'}")
