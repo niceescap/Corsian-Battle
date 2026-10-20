@@ -3,9 +3,11 @@
 > Découpage en six étapes, chacune **livrable et vérifiable seule**. Aucune étape ne dépend
 > d'une décision prise à l'étape suivante.
 >
-> **État actuel : S0 gelée.** La spec est écrite ; l'installation sur noe attend les points
-> ⏳ de `DEPLOIEMENT.md` §10 (contenu de la racine statique, blocs `location` API, budget
-> mémoire).
+> **État actuel : S0 partiellement dégelée.** Racine statique vérifiée (`index.html` = landing
+> officielle 15 Ko + `static/` avec `logo_og.png` et `logo_site.png`, **à conserver tels quels**)
+> et domaine tranché (`soft.opik.net/corsian-battle/` en V1). Restent en attente : les deux blocs
+> `location` API, la directive `proxy_buffering off` sur le WS, et la validation du budget
+> mémoire (`DEPLOIEMENT.md` §10). Aucun code applicatif écrit à ce stade.
 
 ---
 
