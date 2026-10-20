@@ -299,7 +299,7 @@ def configuration() -> JSONResponse:
             "delai_tour_ms": cfg.delai_tour_ms,
             "grace_deconnexion_s": cfg.grace_deconnexion_s,
             "compte_a_rebours_s": cfg.compte_a_rebours_s,
-            "tailles_table": sorted(tables.__class__.__mro__ and [2, 4]),
+            "tailles_table": sorted(TAILLES.values()),
             "ws": f"{cfg.prefixe_public}/ws",
             "prefixe_api": f"{cfg.prefixe_public}/api/jeu",
             "mode_sans_auth": cfg.mode_sans_auth,
