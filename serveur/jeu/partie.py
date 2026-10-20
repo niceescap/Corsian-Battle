@@ -138,14 +138,20 @@ class PartieEnLigne:
         await self.diffuser(self.table, message, vers)
 
     def _traduire(self, valeur: Any) -> Any:
-        """Index moteur → numéros de siège, récursivement."""
+        """Index moteur → numéros de siège, récursivement.
+
+        Seuls les champs listés dans `evenements.CHAMPS_INDEX` portent un index
+        moteur ; les autres (codes de cartes, tailles, booléens) passent tels
+        quels. Un index absent (partie bloquée → `suivant: null`) reste nul.
+        """
         if isinstance(valeur, dict):
-            return {
-                cle: self._traduire(v) if cle not in evenements.CHAMPS_INDEX else self.index_vers_siege(v)
-                if isinstance(v, int)
-                else self._traduire(v)
-                for cle, v in valeur.items()
-            }
+            sortie: Dict[str, Any] = {}
+            for cle, sous in valeur.items():
+                if cle in evenements.CHAMPS_INDEX and isinstance(sous, int):
+                    sortie[cle] = self.index_vers_siege(sous)
+                else:
+                    sortie[cle] = self._traduire(sous)
+            return sortie
         if isinstance(valeur, list):
             return [self._traduire(v) for v in valeur]
         return valeur
