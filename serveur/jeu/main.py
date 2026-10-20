@@ -430,7 +430,12 @@ async def _lancer_partie(table: Table) -> None:
              "d": {"secondes": 0, "annule": True}},
         )
         return
-    partie = PartieEnLigne(table, _diffuser, cfg, sur_fin=_persister_partie)
+    async def sur_suspicion(suspects: List[Dict[str, Any]]) -> None:
+        await _consigner_suspicions(table, suspects)
+
+    partie = PartieEnLigne(
+        table, _diffuser, cfg, sur_fin=_persister_partie, sur_suspicion=sur_suspicion
+    )
     table.partie = partie
     await partie.lancer()
 
