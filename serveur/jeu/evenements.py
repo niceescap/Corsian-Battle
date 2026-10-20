@@ -104,7 +104,9 @@ class Coup:
 
 
 def jouer_coup(
-    jeu: Any, auto: bool = False, doublon_resolu: Optional[bool] = None
+    jeu: Any,
+    auto: bool = False,
+    doublon_resolu: Optional[Union[bool, Callable[[], Optional[bool]]]] = None,
 ) -> Optional[Coup]:
     """Actionne le moteur une fois et traduit le changement d'état.
 
