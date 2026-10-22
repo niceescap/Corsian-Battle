@@ -229,13 +229,20 @@ en double) : `nginx -t` doit rester à `successful`, les `[warn]` ne sont pas bl
 | 5. Config publique | `curl -s .../api/jeu/config` | `fenetre_tape_ms: 900` |
 | 6. Compte invité | `POST .../api/auth/invite` | jeton + `nouveau_compte: true` |
 | 7. Table | `POST .../api/jeu/tables` | code à 6 caractères |
-| 8. WS | `curl -i -N -H 'Connection: Upgrade' …/corsian-battle/ws` | `101 Switching Protocols` |
+| 8. WS | `curl -i -N --http1.1 -H 'Connection: Upgrade' …/corsian-battle/ws` | `101 Switching Protocols` |
 | 9. WS outillé | `websocat wss://soft.opik.net/corsian-battle/ws` puis `bonjour` | `bienvenue` + `table_etat` |
 | 10. Mémoire | `systemctl status corsian-*`, `free -m` | < 450 Mo cumulés, swap stable |
 | 11. Reprise | `sudo systemctl restart corsian-jeu` pendant une table | table rechargée depuis `tables_snapshot` |
 | 12. Sauvegarde | `systemctl start corsian-sauvegarde.service` | fichier `sauvegardes/corsian-AAAA-MM-JJ.db` |
 
-Recette complète en §6 de `ENDPOINTS.md`.
+⚠️ **`--http1.1` est obligatoire à l'étape 8.** Par défaut curl négocie HTTP/2
+avec nginx, et HTTP/2 ne porte l'upgrade WebSocket que via la RFC 8441, non
+activée sur nginx 1.24 : on obtient alors un **`404` trompeur** alors que le
+proxy et le backend fonctionnent. Le même test en direct sur le backend
+(`http://127.0.0.1:8112/ws`) lève toute ambiguïté.
+
+Recette complète (commandes exactes, création de compte, table) en §6 de
+`ENDPOINTS.md`.
 
 ## 7. Publication des binaires et du site
 
