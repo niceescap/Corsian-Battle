@@ -301,6 +301,31 @@ pas à l'égalité stricte avec un compteur global de messages — ce compteur e
 incrémenté par les messages privés adressés à un autre siège, et un client
 parfaitement synchronisé serait alors refusé à chaque coup.
 
+### 6.5 L'écran de jeu en ligne
+
+`app/lib/screens/ecran_table_en_ligne.dart` affiche ce que le serveur
+raconte. Comme le reste de l'UX, **sans mot** : le sens passe par la
+couleur, les pictogrammes, les chiffres et le mouvement.
+
+| Élément affiché | Source |
+|---|---|
+| Carte du dessus du joueur | `ta_carte_suivante` (privé) et `table_etat.sieges[n].ma_carte` |
+| Carte du doublon, au centre du tapis, avec pulsation | `doublon_ouvert.cartes[1]` |
+| Pli en cours | `table_etat.pli` |
+| Défi ouvert : qui répond, combien de chances | `table_etat.defi` |
+| Compte à rebours avant le lancement | `compte_a_rebours` |
+| Bandeau « connexion perdue » / « un joueur part » | `fermetures`, `mouvements` |
+| Bandeau d'alerte de reconnexion refermé | `reconnexions` (émis par le client) |
+
+Deux points méritent d'être écrits, parce qu'ils ont été vérifiés à l'usage :
+
+- **`ma_carte` est dans l'objet du siège**, pas à la racine de l'instantané.
+  Le lire à la racine revient à ne jamais recevoir sa propre carte : le
+  joueur ne voit pas ce qu'il joue, et le doublon n'a rien à animer.
+- **Le chronomètre part au rendu de l'animation**, pas à la réception du
+  message `doublon_ouvert`. Le délai comparé entre joueurs est donc une
+  durée mesurée sur l'appareil, jamais une horloge murale.
+
 ## 7. Données
 
 - **En mémoire** (processus `corsian-jeu`) : les tables actives — sièges, connexions, état du

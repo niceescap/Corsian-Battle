@@ -13,6 +13,8 @@
 > - **S2 / S3** : `corsian-jeu` joue une vraie partie en WebSocket (fenêtre de doublon de 900 ms,
 >   suspicions, statistiques par siège). La **couche réseau de l'app** est branchée
 >   (`app/lib/net/`) : compte invité, création/rejointure de table par code, jeu en WebSocket.
+>   L'**écran de jeu en ligne** est complet : carte du joueur, animation du doublon, pli, défi
+>   ouvert, compte à rebours, bandeaux de mouvement et de reconnexion.
 > - **S5 (partiel)** : l'arbre `android/` est **versionné** — c'était le dernier frein à un AAB
 >   signé. Le nom sous l'icône est « Corsian Battle », la permission `INTERNET` est présente, et
 >   la CI construit un APK **sans** régénérer le scaffolding.
@@ -93,10 +95,16 @@ tour de jeu avec délai de 12 s, fin de partie, enregistrement en base, déconne
 **Critères d'acceptation**
 
 - [ ] Deux téléphones sur le même réseau, puis **sur deux réseaux différents** (4G + wifi)
-- [ ] Une partie complète se déroule jusqu'à la victoire sans intervention
+- [x] Une partie complète se déroule jusqu'à la victoire sans intervention
+      (test d'intégration `partie_en_ligne_test.dart` : partie jouée en WebSocket contre le
+      serveur local, enregistrée en base)
+- [x] Le joueur **reçoit et voit sa carte du dessus** (test dédié, échec sans le correctif)
+- [x] Une fenêtre de doublon **s'ouvre** et annonce les deux cartes (même test)
 - [ ] Les règles affichées en ligne sont **identiques** au hors-ligne : mêmes défis, mêmes
       rebonds, mêmes plis (comparer avec `demo.py` sur le même `seed`)
 - [ ] Coupure réseau de 10 s → reconnexion et reprise, la table n'est pas perdue
+      (la reconnexion automatique existe et est testée côté client ; la reprise en conditions
+      réelles reste à vérifier sur appareil)
 - [ ] Coupure de 60 s → le bot joue, la partie va à son terme, le joueur revenu récupère son siège
 - [ ] Redémarrage de `corsian-jeu` en pleine partie → table restaurée depuis le snapshot
 - [ ] Le client **ne reçoit jamais** autre chose que sa propre carte du dessus (vérification par
