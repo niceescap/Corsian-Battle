@@ -7,6 +7,7 @@ import '../net/client_jeu_rest.dart';
 import '../net/erreur_reseau.dart';
 import '../net/session_jeu.dart';
 import '../widgets/emplacement_pub.dart';
+import 'ecran_compte.dart';
 import 'ecran_salle.dart';
 import 'ecran_table.dart';
 
@@ -247,6 +248,8 @@ class _EcranAccueilState extends State<EcranAccueil> {
                     _boutonJouer(),
                     const SizedBox(height: 20),
                     _blocEnLigne(),
+                    const SizedBox(height: 12),
+                    _boutonCompte(),
                     const SizedBox(height: 16),
                     // Emplacement publicitaire réservé (rectangle moyen).
                     const EmplacementPub(
@@ -484,6 +487,43 @@ class _EcranAccueilState extends State<EcranAccueil> {
   /// Le jeu hors-ligne reste prioritaire : si le serveur ne répond pas, ce
   /// bloc est simplement inerte et le duel contre la machine fonctionne
   /// toujours (`docs/ARCHITECTURE.md` §1.5).
+  /// Accès au compte : pseudo et suppression du compte.
+  ///
+  /// La suppression doit être possible **depuis l'application** : c'est une
+  /// exigence RGPD et une condition de passage sur Google Play
+  /// (`docs/CONFORMITE.md` §5).
+  Widget _boutonCompte() {
+    return SizedBox(
+      height: 44,
+      child: OutlinedButton.icon(
+        onPressed: _ouvrirCompte,
+        icon: const Icon(Icons.person_outline, size: 18),
+        label: const Text(
+          'ACCOUNT',
+          style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white70,
+          side: const BorderSide(color: Colors.white24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _ouvrirCompte() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => EcranCompte(session: _session),
+      ),
+    );
+    if (!mounted) return;
+    // La session a pu être supprimée : l'accueil doit refléter l'état.
+    setState(() {});
+  }
+
   Widget _blocEnLigne() {
     if (!_enLigneDisponible) {
       // Serveur injoignable : on le signale par un picto, sans texte.

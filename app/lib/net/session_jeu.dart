@@ -144,6 +144,25 @@ class SessionJeu {
     }
   }
 
+  /// Supprime le compte côté serveur, puis oublie la session locale.
+  ///
+  /// L'ordre compte : on supprime d'abord chez le serveur, pour qu'un échec
+  /// réseau ne laisse pas l'app dans un état où elle croit avoir supprimé
+  /// un compte qui existe encore.
+  ///
+  /// L'exigence vient de `docs/CONFORMITE.md` §5 : la suppression doit être
+  /// possible **depuis l'application** (RGPD, politique Google Play).
+  Future<void> supprimerCompte() async {
+    final session = _session;
+    if (session == null) {
+      // Rien à supprimer : on forget quand même la session locale.
+      await oublier();
+      return;
+    }
+    await _auth.supprimerCompte(session.jetonAcces);
+    await oublier();
+  }
+
   /// Oublie la session locale (déconnexion). Ne supprime PAS le compte.
   Future<void> oublier() async {
     _prefs ??= await SharedPreferences.getInstance();
