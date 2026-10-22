@@ -275,9 +275,16 @@ réseau vit dans `app/lib/net/`, en six modules :
 
 Trois décisions structurantes :
 
-1. **URL relatives en production.** L'app ne connaît jamais le nom de domaine :
-   seul `PREFIXE_PUBLIC` change si le domaine change. Aucun risque de
-   *mixed content*, et aucun environnement à configurer dans l'app.
+1. **Une seule configuration par compilation.** `ConfigurationReseau.depuisDefines()`
+   est calculé une fois et partagé par le REST, la session et la socket : sinon
+   la table créée d'un côté n'est pas celle rejointe de l'autre. Elle est
+   surchargable à la compilation (`--dart-define=HOST_IP=…`, `MODE_DEV`).
+
+   **L'app native a besoin d'une origine absolue**, là où la *web app* se
+   contente d'URL relatives : une application Android n'a pas de page web à
+   qui demander « d'où vient la requête ». La configuration publiée porte donc
+   `https://soft.opik.net` ; les URL *relatives* restent le bon choix pour la
+   page servie par nginx, qui est la seule à changer si le domaine change.
 2. **Le client ne rejoue pas les règles.** `app/lib/net/` envoie des
    intentions (`poser_carte`, `tape`, `pret`) et affiche ce que le serveur
    raconte. `app/lib/moteur/` n'est jamais utilisé pour arbitrer une partie
