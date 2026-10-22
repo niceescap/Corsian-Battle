@@ -106,6 +106,8 @@ tour de jeu avec délai de 12 s, fin de partie, enregistrement en base, déconne
       (la reconnexion automatique existe et est testée côté client ; la reprise en conditions
       réelles reste à vérifier sur appareil)
 - [ ] Coupure de 60 s → le bot joue, la partie va à son terme, le joueur revenu récupère son siège
+- [x] Table à 4 : une partie à quatre joueurs se mène à son terme en ligne
+      (recette `client_headless.py --joueurs 4` : 642 coups, 37 tapes par joueur, victoire)
 - [ ] Redémarrage de `corsian-jeu` en pleine partie → table restaurée depuis le snapshot
 - [ ] Le client **ne reçoit jamais** autre chose que sa propre carte du dessus (vérification par
       capture du trafic WebSocket)
