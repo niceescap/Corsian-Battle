@@ -3,11 +3,21 @@
 > Découpage en six étapes, chacune **livrable et vérifiable seule**. Aucune étape ne dépend
 > d'une décision prise à l'étape suivante.
 >
-> **État actuel : S0 partiellement dégelée.** Racine statique vérifiée (`index.html` = landing
-> officielle 15 Ko + `static/` avec `logo_og.png` et `logo_site.png`, **à conserver tels quels**)
-> et domaine tranché (`soft.opik.net/corsian-battle/` en V1). Restent en attente : les deux blocs
-> `location` API, la directive `proxy_buffering off` sur le WS, et la validation du budget
-> mémoire (`DEPLOIEMENT.md` §10). Aucun code applicatif écrit à ce stade.
+> **État actuel : S0 et S1 faits, S2 et S3 côté serveur, S2 côté client livrée.**
+>
+> - **S0** : nginx posé (les trois blocs `location`), racine statique vérifiée, domaine tranché
+>   (`soft.opik.net/corsian-battle/` en V1), budget mémoire encore à confirmer.
+> - **S1** : `corsian-auth` complet — compte invité idempotent, JWT RS256, JWKS, rotation et
+>   révocation de session, suppression de compte (app + web).
+> - **S2 / S3** : `corsian-jeu` joue une vraie partie en WebSocket (fenêtre de doublon de 900 ms,
+>   suspicions, statistiques par siège). La **couche réseau de l'app** est branchée
+>   (`app/lib/net/`) : compte invité, création/rejointure de table par code, jeu en WebSocket.
+> - **S5 (partiel)** : l'arbre `android/` est **versionné** — c'était le dernier frein à un AAB
+>   signé. Le nom sous l'icône est « Corsian Battle », la permission `INTERNET` est présente, et
+>   la CI construit un APK **sans** régénérer le scaffolding.
+>
+> Restent en attente : le budget mémoire (`DEPLOIEMENT.md` §10.3), la politique de sauvegarde du
+> keystore, et la publication elle-même (AAB signé, fiche Play, Data Safety).
 
 ---
 

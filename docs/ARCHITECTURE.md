@@ -259,6 +259,41 @@ Tout ce qui est réseau, délais, sockets et temporisateurs vit dans `serveur/`.
 permet de continuer à valider les règles avec `demo.py` et des simulations de milliers de
 parties sans aucun serveur.
 
+### 6.4 ✅ La couche réseau côté app (`app/lib/net/`)
+
+Le port Dart du moteur reste réservé au **hors-ligne**. Tout ce qui parle au
+réseau vit dans `app/lib/net/`, en six modules :
+
+| Module | Rôle |
+|---|---|
+| `config_reseau.dart` | Préfixe public et origines. En production, tout est **relatif** à l'origine de la page ; en développement, deux backends locaux (8111 / 8112), surchargeables par `--dart-define=HOST_IP=…` |
+| `client_auth.dart` | REST `corsian-auth` : compte invité, rafraîchissement, profil, suppression |
+| `client_jeu_rest.dart` | REST `corsian-jeu` : configuration, création/rejointure de table, statistiques |
+| `client_jeu.dart` | WebSocket de jeu (protocole v1) |
+| `modeles_proto.dart` | Modèles du protocole (`EtatTable`, `CartePosee`, `DoublonOuvert`, …) |
+| `session_jeu.dart` | Compte invité idempotent par identifiant d'appareil, jetons persistés, renouvellement silencieux |
+
+Trois décisions structurantes :
+
+1. **URL relatives en production.** L'app ne connaît jamais le nom de domaine :
+   seul `PREFIXE_PUBLIC` change si le domaine change. Aucun risque de
+   *mixed content*, et aucun environnement à configurer dans l'app.
+2. **Le client ne rejoue pas les règles.** `app/lib/net/` envoie des
+   intentions (`poser_carte`, `tape`, `pret`) et affiche ce que le serveur
+   raconte. `app/lib/moteur/` n'est jamais utilisé pour arbitrer une partie
+   en ligne.
+3. **Le chronomètre du doublon est local.** Il part au **rendu** de
+   l'animation, pas à la réception du message. Le délai transmis
+   (`delai_ms`) est donc une durée mesurée sur l'appareil, jamais une
+   horloge murale — la latence réseau ne fausse donc pas la comparaison.
+
+Le `seq_attendu` envoyé par le client est le **dernier `seq` reçu**. Le
+serveur refuse une action dont le `seq_attendu` a déjà été consommé par ce
+siège : c'est la protection contre le rejeu et le double appui. On ne compare
+pas à l'égalité stricte avec un compteur global de messages — ce compteur est
+incrémenté par les messages privés adressés à un autre siège, et un client
+parfaitement synchronisé serait alors refusé à chaque coup.
+
 ## 7. Données
 
 - **En mémoire** (processus `corsian-jeu`) : les tables actives — sièges, connexions, état du
