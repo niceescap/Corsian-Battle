@@ -386,7 +386,9 @@ class ClientJeu {
       case 'joueur_parti':
       case 'bot_prend_la_main':
       case 'partie_lancee':
-        _mouvements.add(donnees);
+        // Le type est recopié dans les données : l'écran a besoin de
+        // savoir QUEL mouvement il reçoit, pas seulement qu'il y en a eu un.
+        _mouvements.add({'type': type, ...donnees});
     }
   }
 

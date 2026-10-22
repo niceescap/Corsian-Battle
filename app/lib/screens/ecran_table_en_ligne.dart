@@ -75,6 +75,12 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
   /// chaque tour, d'où le flux plutôt qu'un simple champ.
   String? _maCarte;
 
+  /// Compte à rebours avant le lancement, en secondes.
+  int? _rebours;
+
+  /// Message bref d'un mouvement de table (joueur parti, bot.take la main).
+  String? _mouvement;
+
   /// La carte annoncée par la fenêtre de doublon (`cartes[1]`).
   ///
   /// C'est elle qui doit déclencher l'animation ET le chronomètre
@@ -138,6 +144,35 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
         if (posee.suivant == _monSiege) {
           // C'est à nous de jouer : rien à faire ici, l'UI indique « à toi ».
         }
+      });
+    });
+
+    ajouter(widget.client.rebours, (int secondes) {
+      if (!mounted) return;
+      setState(() => _rebours = secondes);
+      // Le compte à rebours est court : on l'efface au bout du temps.
+      Future<void>.delayed(Duration(seconds: secondes + 1)).then((_) {
+        if (!mounted) return;
+        setState(() => _rebours = null);
+      });
+    });
+
+    ajouter(widget.client.mouvements, (Map<String, dynamic> evenement) {
+      if (!mounted) return;
+      final type = '${evenement['type'] ?? ''}';
+      String? texte;
+      if (type == 'bot_prend_la_main') {
+        texte = 'UN JOUEUR PART';
+      } else if (type == 'joueur_parti') {
+        texte = 'DÉPART';
+      } else if (type == 'partie_lancee') {
+        texte = null;
+      }
+      if (texte == null) return;
+      setState(() => _mouvement = texte);
+      Future<void>.delayed(const Duration(seconds: 3)).then((_) {
+        if (!mounted) return;
+        setState(() => _mouvement = null);
       });
     });
 
@@ -355,11 +390,62 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
             children: [
               Entete(onRetour: () => Navigator.of(context).pop()),
               if (!_connecte) _bandeauPerdu(),
+              if (_rebours != null) _bandeauRebours(_rebours!),
+              if (_mouvement != null) _bandeauMouvement(_mouvement!),
               Expanded(child: _tapis(etat, aMonTour)),
               _zoneJoueur(monNbCartes, aMonTour),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Compte à rebours avant le lancement de la partie.
+  Widget _bandeauRebours(int secondes) {
+    return Container(
+      width: double.infinity,
+      color: const Color(0xFFFFD54F),
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.play_circle_outline, color: Color(0xFF071F18)),
+          const SizedBox(width: 10),
+          Text(
+            '$secondes',
+            style: const TextStyle(
+              color: Color(0xFF071F18),
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Message bref : un joueur est parti, un bot prend la main.
+  Widget _bandeauMouvement(String texte) {
+    return Container(
+      width: double.infinity,
+      color: Colors.black.withValues(alpha: 0.55),
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.info_outline, color: Colors.white70, size: 16),
+          const SizedBox(width: 8),
+          Text(
+            texte,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -438,6 +524,18 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
               Center(
                 child: _carteDoublonVue(_carteDoublon!),
               ),
+            // Défi en cours : qui doit répondre, et combien de chances reste.
+            //
+            // Sans ce bandeau, le joueur ne voit pas qu'un défi est ouvert :
+            // le défi est prioritaire sur tout le reste, il faut donc
+            // pouvoir l'identifier d'un coup d'œil.
+            if (etat?.defi != null)
+              Positioned(
+                bottom: 10,
+                left: 0,
+                right: 0,
+                child: Center(child: _bandeauDefi(etat!.defi!)),
+              ),
             // Curseur « à toi de jouer ».
             if (aMonTour)
               const Positioned(
@@ -450,6 +548,57 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Bandeau du défi en cours.
+  ///
+  /// Un pictogramme par chance restante, et le组团 du siège qui doit
+  /// répondre mis en avant. Aucun mot : la règle est « la figure demandée
+  /// est en jeu, réponds ».
+  Widget _bandeauDefi(DefiInfo defi) {
+    final jeReponds = defi.repondeur == _monSiege;
+    final jePose = defi.poseur == _monSiege;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 40),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: (jeReponds ? const Color(0xFFFFD54F) : Colors.black)
+            .withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: jeReponds ? const Color(0xFFFFD54F) : Colors.white24,
+          width: 2,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            jeReponds ? Icons.reply : Icons.auto_awesome,
+            color: jeReponds ? const Color(0xFF071F18) : Colors.amberAccent,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          // Les chances restantes : un point par chance.
+          for (var i = 0; i < defi.chancesRestantes; i++)
+            Padding(
+              padding: const EdgeInsets.only(right: 3),
+              child: Icon(
+                Icons.circle,
+                size: 8,
+                color: jeReponds
+                    ? const Color(0xFF071F18)
+                    : Colors.amberAccent,
+              ),
+            ),
+          if (jePose) ...[
+            const SizedBox(width: 6),
+            const Icon(Icons.pan_tool_alt_outlined,
+                color: Colors.white54, size: 16),
+          ],
+        ],
       ),
     );
   }
