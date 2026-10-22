@@ -95,8 +95,11 @@ jobs:
             echo "::warning::Secrets de signature absents : le build release est signé avec les clés de DEBUG et n'est PAS publiable."
           fi
 
+      # Le build release est TOUJOURS lancé, même sans les secrets : c'est
+      # la seule façon de valider en continu que la configuration Gradle de
+      # signature reste correcte. Sans secrets, il retombe sur les clés de
+      # debug — et l'artefact est publié sous un nom qui le dit.
       - name: Construit l'APK release
-        if: steps.signature.outputs.disponible == 'true'
         working-directory: app
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -106,7 +109,6 @@ jobs:
         run: flutter build apk --release
 
       - name: Construit l'AAB release
-        if: steps.signature.outputs.disponible == 'true'
         working-directory: app
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -116,7 +118,6 @@ jobs:
         run: flutter build appbundle --release
 
       - name: Prépare les artefacts release
-        if: steps.signature.outputs.disponible == 'true'
         run: |
           cp app/build/app/outputs/flutter-apk/app-release.apk \
              corsian-battle-release.apk
@@ -126,10 +127,22 @@ jobs:
             > corsian-battle-release.sha256
           ls -lh corsian-battle-release.*
 
+      # Deux artefacts distincts, pour ne jamais laisser croire qu'un
+      # binaire non signé est publiable.
       - uses: actions/upload-artifact@v4
         if: steps.signature.outputs.disponible == 'true'
         with:
           name: release-signe
+          path: |
+            corsian-battle-release.apk
+            corsian-battle-release.aab
+            corsian-battle-release.sha256
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: steps.signature.outputs.disponible != 'true'
+        with:
+          name: release-non-signe
           path: |
             corsian-battle-release.apk
             corsian-battle-release.aab
