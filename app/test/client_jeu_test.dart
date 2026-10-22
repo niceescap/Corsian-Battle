@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bataille_corse/net/client_jeu.dart';
 import 'package:bataille_corse/net/modeles_proto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,6 +24,26 @@ void main() {
 
     souscription1.cancel();
     souscription2.cancel();
+  });
+
+  test('une reconnexion est signalée à l\'écran', () async {
+    final client = ClientJeu();
+
+    // L'écran s'abonne au flux des reconnexions pour refermer le bandeau
+    // « connexion perdue ». Sans cet événement, le joueur garde l'alerte
+    // à l'écran alors que la partie a repris.
+    final reconnecte = Completer<void>();
+    final abonnement = client.reconnexions.listen((_) {
+      if (!reconnecte.isCompleted) reconnecte.complete();
+    });
+
+    // On simule l'ouverture réussie de la socket.
+    client.simulerOuverture();
+
+    await reconnecte.future.timeout(const Duration(seconds: 2));
+    expect(client.ouvert, isTrue);
+
+    await abonnement.cancel();
   });
 
   test('un état déjà reçu est rejoué au nouvel abonné', () async {

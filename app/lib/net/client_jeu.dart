@@ -76,6 +76,14 @@ class ClientJeu {
   final StreamController<int> _fermetures =
       StreamController<int>.broadcast();
 
+  /// Ouverture réussie d'une socket (première connexion ou reconnexion).
+  ///
+  /// L'écran s'en sert pour refermer le bandeau « connexion perdue » : sans
+  /// cet événement, un joueur qui se reconnecte garderait l'alerte à
+  /// l'écran alors que la partie a repris.
+  final StreamController<void> _reconnexions =
+      StreamController<void>.broadcast();
+
   /// Dernier instantané reçu.
   ///
   /// Il est mémorisé parce que le client s'abonne souvent APRÈS l'ouverture
@@ -178,6 +186,9 @@ class ClientJeu {
   Stream<int> get rebours => _rebours.stream;
   Stream<int> get fermetures => _fermetures.stream;
 
+  /// Flux des ouvertures réussies (connexion ou reconnexion).
+  Stream<void> get reconnexions => _reconnexions.stream;
+
   /// Ouvre la socket et envoie le `bonjour`.
   ///
   /// Le jeton n'est **jamais** mis dans la query string : il finirait dans
@@ -224,6 +235,8 @@ class ClientJeu {
     });
     _ouvert = true;
     _tentatives = 0;
+    // La socket est (re)ouverte : l'écran referme l'alerte de coupure.
+    _reconnexions.add(null);
 
     _envoyer({
       'type': 'bonjour',
@@ -297,6 +310,7 @@ class ClientJeu {
     await _mouvements.close();
     await _rebours.close();
     await _fermetures.close();
+    await _reconnexions.close();
   }
 
   // ------------------------------------------------------------------ //
@@ -312,6 +326,16 @@ class ClientJeu {
     _dernierEtat = etat;
     if (etat.monSiege >= 0) _siege = etat.monSiege;
     _etats.add(etat);
+  }
+
+  /// Simule une ouverture réussie de socket, sans réseau.
+  ///
+  /// Réservé aux tests : permet de vérifier que l'écran est bien prévenu
+  /// d'une reconnexion.
+  @visibleForTesting
+  void simulerOuverture() {
+    _ouvert = true;
+    _reconnexions.add(null);
   }
 
   // ------------------------------------------------------------------ //

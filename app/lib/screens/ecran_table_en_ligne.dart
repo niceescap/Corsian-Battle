@@ -232,6 +232,15 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
       setState(() => _erreur = erreur.message);
     });
 
+    ajouter(widget.client.reconnexions, (_) {
+      if (!mounted) return;
+      // La socket est revenue : l'alerte de coupure n'a plus lieu d'être.
+      setState(() {
+        _connecte = true;
+        _erreur = null;
+      });
+    });
+
     ajouter(widget.client.fermetures, (int code) {
       if (!mounted) return;
       setState(() => _connecte = false);
