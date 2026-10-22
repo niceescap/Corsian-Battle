@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../moteur/partie_locale.dart';
 import '../net/client_jeu.dart';
+import '../net/config_reseau.dart';
 import '../net/client_jeu_rest.dart';
 import '../net/erreur_reseau.dart';
 import '../net/session_jeu.dart';
 import '../widgets/emplacement_pub.dart';
+import 'ecran_salle.dart';
 import 'ecran_table.dart';
-import 'ecran_table_en_ligne.dart';
 
 /// Page de lancement.
 ///
@@ -109,7 +110,7 @@ class _EcranAccueilState extends State<EcranAccueil> {
         jeton: jeton,
         type: _mode == ModePartie.duel ? 'duel' : 'table_quatre',
       );
-      await _ouvrirTable(table.code);
+      await _ouvrirTable(table.code, urlPartage: table.urlPartage);
     } on ErreurReseau catch (e) {
       if (!mounted) return;
       setState(() => _erreur = e.message);
@@ -134,7 +135,10 @@ class _EcranAccueilState extends State<EcranAccueil> {
       final jeton = await _jeton();
       if (jeton == null) return;
       await _rest.rejoindreTable(jeton: jeton, code: code);
-      await _ouvrirTable(code);
+      await _ouvrirTable(
+        code,
+        urlPartage: ConfigurationReseau.production.urlPartage(code),
+      );
     } on ErreurReseau catch (e) {
       if (!mounted) return;
       setState(() => _erreur = e.message);
@@ -143,8 +147,11 @@ class _EcranAccueilState extends State<EcranAccueil> {
     }
   }
 
-  /// Ouvre la socket de jeu et bascule sur l'écran de table en ligne.
-  Future<void> _ouvrirTable(String code) async {
+  /// Ouvre la socket de jeu et bascule sur la salle d'attente.
+  ///
+  /// La salle affiche le code à 6 caractères (l'invitation) et les joueurs
+  /// présents ; elle cède la place à l'écran de jeu quand la partie démarre.
+  Future<void> _ouvrirTable(String code, {String? urlPartage}) async {
     final jeton = await _jeton();
     if (jeton == null) return;
     final client = ClientJeu();
@@ -162,14 +169,14 @@ class _EcranAccueilState extends State<EcranAccueil> {
     }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => EcranTableEnLigne(
+        builder: (_) => EcranSalle(
           client: client,
           codeTable: code,
-          monSiege: -1,
+          urlPartage: urlPartage,
         ),
       ),
     );
-    // L'écran de table a fermé la socket : on ne conserve rien.
+    // L'écran a fermé la socket : on ne conserve rien.
     await client.disposing();
   }
 

@@ -97,6 +97,7 @@ class Config:
     max_messages_par_s: int = 10
     silence_max_s: int = 75
     bonjour_max_s: int = 5
+    max_creations_compte_h: int = 20
 
     @property
     def url_jwks(self) -> str:

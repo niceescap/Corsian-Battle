@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'config_reseau.dart';
@@ -27,6 +28,9 @@ class ClientJeu {
 
   /// Le socket est-il ouvert ?
   bool get connecte => _canal != null;
+
+  /// Le socket est-il actuellement établi (et non en cours de reconnexion) ?
+  bool get ouvert => _ouvert;
 
   /// Messages « à toi de jouer » : [etat] et [table_etat].
   final StreamController<EtatTable> _etats =
@@ -83,6 +87,29 @@ class ClientJeu {
   /// Siège attribué par le serveur (`bienvenue`).
   int _siege = -1;
 
+  // --- Reconnexion ------------------------------------------------------
+  /// Jeton et table, mémorisés pour pouvoir rouvrir la socket.
+  String? _jeton;
+  String? _codeTable;
+
+  /// Numéro de tentative de reconnexion (0 = première ouverture).
+  int _tentatives = 0;
+
+  /// Minuteur de reconnexion en cours.
+  Timer? _minuteurReconnexion;
+
+  /// La reconnexion automatique est-elle active ?
+  ///
+  /// Elle l'est, sauf si la fermeture est « définitive » : table introuvable
+  /// ou complète, version de protocole incompatible.
+  bool _reconnexionAutorisee = true;
+
+  /// Le socket est-il actuellement ouvert ?
+  bool _ouvert = false;
+
+  /// Fermeures qui interdisent toute reconnexion.
+  static const Set<int> _fermeturesDefinitives = {4404, 4409, 4413};
+
   /// Dernier instantané reçu, rejoué à l'abonnement.
   EtatTable? get dernierEtat => _dernierEtat;
 
@@ -92,15 +119,24 @@ class ClientJeu {
   ClientJeu({ConfigurationReseau? config})
       : _config = config ?? ConfigurationReseau.production;
 
-  /// Flux des instantanés.
+  /// Flux des instantanés, **multi-abonnement**, avec rejeu de l'état courant.
   ///
-  /// Si un instantané est déjà arrivé, il est rejoué immédiatement à
-  /// l'abonnement : l'écran ne rate jamais l'état initial (le `bienvenue`
-  /// et le premier `table_etat` arrivent souvent AVANT que l'UI ne s'abonne).
-  Stream<EtatTable> get etats async* {
+  /// Chaque appel rend un flux NEUF : l'abonné reçoit l'état en cours
+  /// (s'il existe) puis les suivants. La salle d'attente et l'écran de jeu
+  /// s'abonnent successivement au MÊME client : un flux à abonnement unique
+  /// planterait au second `listen`, et un flux muet perdrait l'état initial.
+  Stream<EtatTable> get etats {
     final deja = _dernierEtat;
-    if (deja != null) yield deja;
-    yield* _etats.stream;
+    late final StreamController<EtatTable> controleur;
+    StreamSubscription<EtatTable>? abonnement;
+    controleur = StreamController<EtatTable>(
+      onListen: () {
+        if (deja != null) controleur.add(deja);
+        abonnement = _etats.stream.listen(controleur.add);
+      },
+      onCancel: () => abonnement?.cancel(),
+    );
+    return controleur.stream;
   }
   Stream<CartePosee> get cartes => _cartes.stream;
   Stream<String> get maCarte => _maCarte.stream;
@@ -122,6 +158,18 @@ class ClientJeu {
     required String codeTable,
     int versionProto = 1,
   }) async {
+    _jeton = jeton;
+    _codeTable = codeTable;
+    _versionProto = versionProto;
+    await _ouvrirSocket();
+  }
+
+  int _versionProto = 1;
+
+  Future<void> _ouvrirSocket() async {
+    final jeton = _jeton;
+    final codeTable = _codeTable;
+    if (jeton == null || codeTable == null) return;
     final uri = Uri.parse(_config.urlWebSocket);
     final canal = WebSocketChannel.connect(uri);
     _canal = canal;
@@ -145,13 +193,15 @@ class ClientJeu {
     _minuteurPing = Timer.periodic(const Duration(seconds: 25), (_) {
       _envoyer({'type': 'ping'});
     });
+    _ouvert = true;
+    _tentatives = 0;
 
     _envoyer({
       'type': 'bonjour',
       'd': {
         'jeton': jeton,
         'table': codeTable,
-        'version_proto': versionProto,
+        'version_proto': _versionProto,
       },
     });
   }
@@ -186,8 +236,12 @@ class ClientJeu {
 
   /// Ferme proprement la socket.
   Future<void> fermer() async {
+    _reconnexionAutorisee = false;
+    _minuteurReconnexion?.cancel();
+    _minuteurReconnexion = null;
     _minuteurPing?.cancel();
     _minuteurPing = null;
+    _ouvert = false;
     try {
       quitter();
       await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -214,6 +268,21 @@ class ClientJeu {
     await _mouvements.close();
     await _rebours.close();
     await _fermetures.close();
+  }
+
+  // ------------------------------------------------------------------ //
+  // Test
+  // ------------------------------------------------------------------ //
+
+  /// Simule la réception d'un instantané, sans socket.
+  ///
+  /// Réservé aux tests : permet de vérifier le rejeu d'état et le
+  /// multi-abonnement sans dépendre d'un serveur.
+  @visibleForTesting
+  void simulerEtat(EtatTable etat) {
+    _dernierEtat = etat;
+    if (etat.monSiege >= 0) _siege = etat.monSiege;
+    _etats.add(etat);
   }
 
   // ------------------------------------------------------------------ //
@@ -280,9 +349,39 @@ class ClientJeu {
   }
 
   void _surFermeture() {
-    codeFermeture = _canal?.closeCode;
+    final code = _canal?.closeCode;
+    codeFermeture = code;
+    _ouvert = false;
     _minuteurPing?.cancel();
     _minuteurPing = null;
-    if (codeFermeture != null) _fermetures.add(codeFermeture!);
+    if (code != null) {
+      _fermetures.add(code);
+      if (_fermeturesDefinitives.contains(code)) {
+        // Table introuvable, complète ou protocole incompatible : inutile
+        // d'insister, l'app doit demander une action au joueur.
+        _reconnexionAutorisee = false;
+      }
+    }
+    _planifierReconnexion();
+  }
+
+  /// Reconnexion avec recul exponentiel (1 s, 2 s, 4 s … 30 s).
+  ///
+  /// `docs/PROTOCOLE.md` §12 : une coupure ne doit jamais faire perdre la
+  /// partie. Le serveur renvoie un instantané complet à la reconnexion.
+  void _planifierReconnexion() {
+    _minuteurReconnexion?.cancel();
+    if (!_reconnexionAutorisee || _jeton == null) return;
+    if (_fermeturesDefinitives.contains(codeFermeture)) return;
+    _tentatives++;
+    final secondes = (1 << (_tentatives - 1).clamp(0, 5)).clamp(1, 30);
+    _minuteurReconnexion = Timer(Duration(seconds: secondes), () async {
+      try {
+        await _ouvrirSocket();
+      } catch (_) {
+        // L'ouverture a échoué : on retentera à la prochaine tentative.
+        _planifierReconnexion();
+      }
+    });
   }
 }

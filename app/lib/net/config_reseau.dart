@@ -94,6 +94,18 @@ class ConfigurationReseau {
     return '${_versWs(origineJeu)}$prefixePublic/ws';
   }
 
+  /// URL de partage d'une table.
+  ///
+  /// Invitation **sans deep link** : la page web affiche le code en très
+  /// grand et la consigne d'ouvrir l'app. Cela fonctionne dès maintenant,
+  /// sans App Links natifs (`docs/PROTOCOLE.md` §4).
+  String urlPartage(String code) {
+    if (prefixePublic.isEmpty) {
+      return 'https://soft.opik.net/corsian-battle/#table=$code';
+    }
+    return '$prefixePublic/#table=$code';
+  }
+
   /// `http://` → `ws://`, `https://` → `wss://`.
   static String _versWs(String origine) {
     if (origine.startsWith('https://')) return 'wss://${origine.substring(8)}';

@@ -44,8 +44,16 @@ _etat: Dict[str, Any] = {}
 porteur = HTTPBearer(auto_error=False)
 
 # Limites de `docs/ENDPOINTS.md` §5.
+# La limite de CRÉATION par IP est volontairement généreuse (20/h par
+# défaut, `max_creations_compte_h`) : elle
+# protège contre la création massive de comptes, mais ne doit pas bloquer
+# les joueurs légitimes d'un Wi-Fi partagé ou d'une IP mobile mutualisée.
+# La vraie protection anti-abus est ailleurs : `appareils.uuid_appareil`
+# est UNIQUE (un appareil = un compte), et le pseudo est unique et filtré.
+# Le compteur ne consomme QUE les vraies créations : un appel idempotent
+# (redémarrage de l'app) ne doit pas être puni.
 _limiteurs: Dict[str, Limiteur] = {
-    "invite": Limiteur(5, 3600),          # 5 créations / h / IP
+    "invite": Limiteur(cfg.max_creations_compte_h, 3600),  # créations / h / IP
     "rafraichir": Limiteur(60, 3600),     # 60 / h / IP
     "lecture": Limiteur(120, 60),         # 120 / min / IP
 }
@@ -305,7 +313,6 @@ def invite(corps: InviteRequete, request: Request) -> JSONResponse:
     ce qui rend la reconnexion transparente après redémarrage de l'app. Le
     pseudo fourni n'est alors pas appliqué (le joueur le change via son profil).
     """
-    _limiter(request, "invite")
     pseudo_propre, code = filtre.valider(corps.pseudo)
     if code is not None or pseudo_propre is None:
         raise ErreurApi(code or "pseudo_interdit", filtre.message_erreur(code), 422)
@@ -319,6 +326,13 @@ def invite(corps: InviteRequete, request: Request) -> JSONResponse:
                 joueur = existant
                 nouveau = False
             else:
+                # La limite de création ne compte QUE les vraies créations.
+                # Un appel idempotent (redémarrage de l'app) ne doit pas
+                # consommer le quota : sinon un joueur légitime se voit
+                # refuser la reconnexion parce qu'il a redémarré son
+                # téléphone — et plusieurs joueurs derrière la même box
+                # (ou une IP mobile partagée) sont bloqués injustement.
+                _limiter(request, "invite")
                 if bd.pseudo_min_pris(conn, filtre.pseudo_min(pseudo_propre)):
                     raise ErreurApi("pseudo_indisponible", "Ce pseudo est déjà pris.", 409)
                 joueur_id = uuid.uuid4().hex

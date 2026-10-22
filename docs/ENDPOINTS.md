@@ -73,6 +73,13 @@ Réponse `200` :
 Erreurs : `422 pseudo_refuse` (filtre UGC), `409 pseudo_indisponible`, `429 trop_de_comptes`
 (limite par IP et par appareil).
 
+La limite de création ne compte **que les vraies créations** : un appel
+idempotent (même `uuid_appareil`, donc redémarrage de l'app) ne consomme pas
+le quota. La limite par IP est de 20/h — assez large pour un Wi-Fi partagé
+ou une IP mobile mutualisée ; la vraie protection anti-abus est
+`appareils.uuid_appareil` UNIQUE (un appareil = un compte) et l'unicité du
+pseudo.
+
 ### 3.3 `POST /api/auth/connexion`
 
 ```json
@@ -272,7 +279,7 @@ Bascule manuelle du drapeau `maintenance` servi par `/config`, pour couper le mu
 
 | Famille | Limite | Réponse au-delà |
 |---|---|---|
-| Création de compte (`/invite`) | 5 / h / IP, 1 / appareil | `429` |
+| Création de compte (`/invite`) | 20 / h / IP, 1 / appareil | `429` |
 | Connexion (`/connexion`) | 5 / 15 min / IP | `429` |
 | Rafraîchissement | 60 / h / compte | `429` |
 | Création de table | 10 / h / compte | `429` |

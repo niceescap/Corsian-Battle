@@ -131,6 +131,7 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
       if (!mounted) return;
       setState(() {
         _feuDoublon = true;
+        _tapeEnvoyee = false;
         // Le chronomètre part AU RENDU de l'animation : c'est la mesure
         // locale qui départage les joueurs, jamais une horloge murale
         // (`docs/PROTOCOLE.md` §9).
@@ -194,9 +195,16 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
     widget.client.poserCarte();
   }
 
+  /// A-t-on déjà tapé pendant la fenêtre courante ?
+  ///
+  /// Le serveur ne retient que le PREMIER envoi d'un siège : en renvoyer
+  /// plusieurs serait compté comme une anomalie (et consigné en suspicion).
+  bool _tapeEnvoyee = false;
+
   void _taper() {
     final debut = _debutFenetre;
-    if (debut == null) return;
+    if (debut == null || _tapeEnvoyee) return;
+    _tapeEnvoyee = true;
     final delai = DateTime.now().difference(debut).inMilliseconds;
     widget.client.taper(delai);
   }

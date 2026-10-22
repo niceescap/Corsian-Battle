@@ -73,11 +73,13 @@ void main() {
 
 /// Crée un compte invité (idempotent par pseudo + UUID).
 Future<String> _compte(ClientJeuRest rest, String suffixe) async {
-  // On passe par le client d'authentification pour un vrai jeton.
+  // L'`uuid_appareil` est FIXE : `POST /api/auth/invite` est idempotent, donc
+  // le compte n'est créé qu'une fois. Sans cela, le test buterait sur la
+  // limite de création de comptes (5/h/IP) dès la deuxième exécution.
   final auth = ClientAuth(config: ConfigurationReseau.developpementHote(_hote));
   final session = await auth.creerCompteInvite(
-    uuidAppareil: 'test-dart-$suffixe-${Random().nextInt(100000)}',
-    pseudo: 'Dart${suffixe.toUpperCase()}${Random().nextInt(1000)}',
+    uuidAppareil: 'test-dart-$suffixe',
+    pseudo: 'Dart${suffixe.toUpperCase()}',
     plateforme: 'test',
   );
   auth.close();
