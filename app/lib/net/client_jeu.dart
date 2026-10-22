@@ -41,7 +41,7 @@ class ClientJeu {
       StreamController<CartePosee>.broadcast();
 
   /// La carte du dessus de ce client (message privé).
-  final StreamController<String> _maCarte =
+  final StreamController<String> _carteController =
       StreamController<String>.broadcast();
 
   /// Ouverture d'une fenêtre de doublon.
@@ -87,6 +87,15 @@ class ClientJeu {
   /// Siège attribué par le serveur (`bienvenue`).
   int _siege = -1;
 
+  /// La carte du dessus de CE client.
+  ///
+  /// Elle arrive par deux canaux : le message privé `ta_carte_suivante`, et
+  /// l'instantané `table_etat` (où le serveur la place dans l'objet du
+  /// siège). On la mémorise pour la restituer à l'écran : c'est elle que le
+  /// joueur doit voir avant de lancer sa carte, et c'est elle que le
+  /// doublon animationne.
+  String? _carte;
+
   // --- Reconnexion ------------------------------------------------------
   /// Jeton et table, mémorisés pour pouvoir rouvrir la socket.
   String? _jeton;
@@ -116,6 +125,9 @@ class ClientJeu {
   /// Siège de ce client, `-1` tant que le serveur ne l'a pas donné.
   int get siege => _siege;
 
+  /// La carte du dessus de ce client, si elle est connue.
+  String? get maCarteConnue => _carte;
+
   ClientJeu({ConfigurationReseau? config})
       : _config = config ?? ConfigurationReseau.depuisDefines();
 
@@ -139,7 +151,24 @@ class ClientJeu {
     return controleur.stream;
   }
   Stream<CartePosee> get cartes => _cartes.stream;
-  Stream<String> get maCarte => _maCarte.stream;
+  /// Flux de la carte du dessus de ce client, **multi-abonnement**.
+  ///
+  /// Comme `etats`, chaque appel rend un flux neuf qui rejoue la carte
+  /// connue : l'écran de jeu s'abonne souvent après le premier message
+  /// `ta_carte_suivante`, et l'ignorer laisserait le joueur sans sa carte.
+  Stream<String> get maCarte {
+    final deja = _carte;
+    late final StreamController<String> controleur;
+    StreamSubscription<String>? abonnement;
+    controleur = StreamController<String>(
+      onListen: () {
+        if (deja != null) controleur.add(deja);
+        abonnement = _carteController.stream.listen(controleur.add);
+      },
+      onCancel: () => abonnement?.cancel(),
+    );
+    return controleur.stream;
+  }
   Stream<DoublonOuvert> get doublons => _doublons.stream;
   Stream<DoublonResolu> get verdicts => _verdicts.stream;
   Stream<PliGagne> get plis => _plis.stream;
@@ -259,7 +288,7 @@ class ClientJeu {
     await fermer();
     await _etats.close();
     await _cartes.close();
-    await _maCarte.close();
+    await _carteController.close();
     await _doublons.close();
     await _verdicts.close();
     await _plis.close();
@@ -315,13 +344,26 @@ class ClientJeu {
     switch (type) {
       case 'bienvenue':
       case 'table_etat':
-        final etat = EtatTable.fromJson(donnees);
+        var etat = EtatTable.fromJson(donnees);
         if (etat.monSiege >= 0) _siege = etat.monSiege;
+        // L'instantané peut porter la carte du dessus (dans l'objet du
+        // siège) : on la mémorise, pour que le flux `maCarte` la restitue
+        // même si le message privé est arrivé avant l'abonnement.
+        if (etat.maCarte != null) {
+          _carte = etat.maCarte;
+        } else if (_carte != null) {
+          // Le canal privé est arrivé avant l'instantané : on complète
+          // l'état plutôt que de l'écraser.
+          etat = etat.avecMaCarte(_carte!);
+        }
         _dernierEtat = etat;
         _etats.add(etat);
       case 'ta_carte_suivante':
         final carte = donnees['carte'];
-        if (carte is String) _maCarte.add(carte);
+        if (carte is String) {
+          _carte = carte;
+          _carteController.add(carte);
+        }
       case 'carte_posee':
         _cartes.add(CartePosee.fromJson(donnees));
       case 'doublon_ouvert':

@@ -68,6 +68,20 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
   /// Horodatage du début de la fenêtre de doublon (chronomètre local).
   DateTime? _debutFenetre;
 
+  /// La carte du dessus de ce client (reçue par `ta_carte_suivante`).
+  ///
+  /// En ligne, le serveur **pré-annonce** la carte à son propriétaire : c'est
+  /// ce qui permet de choisir une strategy avant de lancer. Elle change à
+  /// chaque tour, d'où le flux plutôt qu'un simple champ.
+  String? _maCarte;
+
+  /// La carte annoncée par la fenêtre de doublon (`cartes[1]`).
+  ///
+  /// C'est elle qui doit déclencher l'animation ET le chronomètre
+  /// (`docs/PROTOCOLE.md` §10.1) : `doublon_ouvert` arrive **avant**
+  /// `carte_posee` pour la carte qui fait le doublon.
+  String? _carteDoublon;
+
   /// Le chronomètre de fin de fenêtre de doublon.
   Timer? _minuteurFenetre;
 
@@ -127,11 +141,19 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
       });
     });
 
+    ajouter(widget.client.maCarte, (String carte) {
+      if (!mounted) return;
+      setState(() => _maCarte = carte);
+    });
+
     ajouter(widget.client.doublons, (DoublonOuvert fenetre) {
       if (!mounted) return;
       setState(() {
         _feuDoublon = true;
         _tapeEnvoyee = false;
+        // `cartes[1]` est la carte du dessus du joueur dont c'est le tour :
+        // c'est elle que l'animation montre, et elle amorce le chronomètre.
+        _carteDoublon = fenetre.cartes.length > 1 ? fenetre.cartes[1] : null;
         // Le chronomètre part AU RENDU de l'animation : c'est la mesure
         // locale qui départage les joueurs, jamais une horloge murale
         // (`docs/PROTOCOLE.md` §9).
@@ -149,7 +171,10 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
 
     ajouter(widget.client.verdicts, (DoublonResolu _) {
       if (!mounted) return;
-      setState(() => _feuDoublon = false);
+      setState(() {
+        _feuDoublon = false;
+        _carteDoublon = null;
+      });
       _minuteurFenetre?.cancel();
     });
 
@@ -404,6 +429,15 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
             Center(
               child: _pliVue(),
             ),
+            // La carte du doublon, révélée au-dessus du pli.
+            //
+            // C'est elle qui amorce le chronomètre : le joueur doit voir
+            // QUELLE carte fait doublon avant de taper, sinon le tap est
+            // un pari aveugle (`docs/PROTOCOLE.md` §10.1).
+            if (_feuDoublon && _carteDoublon != null)
+              Center(
+                child: _carteDoublonVue(_carteDoublon!),
+              ),
             // Curseur « à toi de jouer ».
             if (aMonTour)
               const Positioned(
@@ -417,6 +451,16 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
           ],
         ),
       ),
+    );
+  }
+
+  /// La carte révélée par la fenêtre de doublon.
+  ///
+  /// Elle apparaît face visible au centre du tapis, au-dessus du pli, avec
+  /// une pulsation : le signal visuel « la fenêtre est ouverte, tapez ».
+  Widget _carteDoublonVue(String code) {
+    return _PulsationDoublon(
+      enfant: CarteWidget(code: code, largeur: 80, hauteur: 112),
     );
   }
 
@@ -508,6 +552,14 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
             ),
           ),
           const SizedBox(width: 12),
+          // La carte du dessus, pré-annoncée par le serveur. Elle est
+          // visible : c'est ce qui permet de préparer son coup, et c'est
+          // elle que l'animation du doublon met en scène.
+          if (_maCarte != null)
+            _carteDuJoueur(_maCarte!, aMonTour)
+          else
+            const SizedBox(width: 84),
+          const SizedBox(width: 12),
           if (aMonTour)
             Container(
               height: 84,
@@ -526,6 +578,74 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
             const SizedBox(width: 84),
         ],
       ),
+    );
+  }
+
+  /// La carte du dessus du joueur, face visible.
+  Widget _carteDuJoueur(String code, bool aMonTour) {
+    return GestureDetector(
+      onTap: aMonTour ? _poserCarte : null,
+      child: Container(
+        width: 84,
+        height: 119,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFF80CBC4), width: 2),
+        ),
+        padding: const EdgeInsets.all(3),
+        child: CarteWidget(code: code, largeur: 72, hauteur: 101),
+      ),
+    );
+  }
+}
+
+/// Pulsation de la carte du doublon : le signal « la fenêtre est ouverte ».
+///
+/// Sans mot, comme le reste de l'UX universelle : la couleur et le
+/// mouvement suffisent.
+class _PulsationDoublon extends StatefulWidget {
+  final Widget enfant;
+
+  const _PulsationDoublon({required this.enfant});
+
+  @override
+  State<_PulsationDoublon> createState() => _PulsationDoublonState();
+}
+
+class _PulsationDoublonState extends State<_PulsationDoublon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 420),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, enfant) => Transform.scale(
+        scale: 1.0 + 0.08 * _ctrl.value,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.redAccent.withValues(alpha: 0.35 + 0.4 * _ctrl.value),
+                blurRadius: 18 + 12 * _ctrl.value,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: enfant,
+        ),
+      ),
+      child: widget.enfant,
     );
   }
 }

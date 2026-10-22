@@ -69,6 +69,66 @@ void main() {
     await clientB.disposing();
     rest.close();
   }, timeout: const Timeout(Duration(minutes: 4)));
+
+  test('le joueur reçoit sa carte du dessus et voit le doublon s\'ouvrir',
+      () async {
+    final rest = ClientJeuRest(
+      config: ConfigurationReseau.developpementHote(_hote),
+    );
+
+    try {
+      await rest.config().timeout(const Duration(seconds: 3));
+    } catch (_) {
+      markTestSkipped('Serveur local absent : lancer serveur/lancer_local.sh');
+      return;
+    }
+
+    final compteA = await _compte(rest, 'a');
+    final compteB = await _compte(rest, 'b');
+
+    final table = await rest.creerTable(jeton: compteA, type: 'duel');
+    await rest.rejoindreTable(jeton: compteB, code: table.code);
+
+    final clientA = ClientJeu(config: ConfigurationReseau.developpementHote(_hote));
+    final clientB = ClientJeu(config: ConfigurationReseau.developpementHote(_hote));
+    await clientA.ouvrir(jeton: compteA, codeTable: table.code);
+    await clientB.ouvrir(jeton: compteB, codeTable: table.code);
+
+    final carteA = Completer<String>();
+    final doublon = Completer<DoublonOuvert>();
+
+    final sous = <StreamSubscription<dynamic>>[
+      clientA.maCarte.listen((String code) {
+        if (!carteA.isCompleted) carteA.complete(code);
+      }),
+      clientA.doublons.listen((DoublonOuvert fenetre) {
+        if (!doublon.isCompleted) doublon.complete(fenetre);
+      }),
+    ];
+
+    // Les deux joueurs se déclarent prêts : la partie démarre.
+    clientA.marquerPret();
+    clientB.marquerPret();
+
+    // 1) La carte du dessus arrive par le canal privé.
+    final code = await carteA.future.timeout(const Duration(seconds: 30));
+    expect(code, isNotEmpty, reason: 'le joueur doit connaître sa carte du dessus');
+    expect(code.length, 2, reason: 'un code de carte poker fait deux caractères');
+
+    // 2) Une fenêtre de doublon finit par s'ouvrir, et elle annonce DEUX
+    //    cartes : le pli et la carte du dessus qui fait doublon.
+    final fenetre = await doublon.future.timeout(const Duration(minutes: 3));
+    expect(fenetre.cartes.length, 2);
+    expect(fenetre.cartes[1], isNotEmpty);
+    expect(fenetre.fenetreMs, greaterThan(0));
+
+    for (final s in sous) {
+      await s.cancel();
+    }
+    await clientA.disposing();
+    await clientB.disposing();
+    rest.close();
+  }, timeout: const Timeout(Duration(minutes: 4)));
 }
 
 /// Crée un compte invité (idempotent par pseudo + UUID).

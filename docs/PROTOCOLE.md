@@ -163,6 +163,12 @@ Règle : **chaque champ privé n'apparaît que dans la copie destinée à son pr
 `ma_carte` n'est présent que pour le siège concerné. Le pli est public ; les tas adverses ne
 le sont que par leur **taille**.
 
+> **`ma_carte` est dans l'objet du siège, pas à la racine de l'instantané.** Le lire à la racine
+> (un `json['ma_carte']` sur le dict de l'instantané) revient à ne jamais recevoir sa propre
+> carte : le joueur ne voit alors jamais sa carte du dessus, et l'animation du doublon n'a rien
+> à mettre en scène. Le client accepte les deux formes, mais **jamais** la carte d'un autre
+> siège.
+
 ## 7. Déroulé d'un coup normal
 
 ```

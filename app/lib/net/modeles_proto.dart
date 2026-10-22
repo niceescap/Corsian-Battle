@@ -22,12 +22,21 @@ class SiegeInfo {
   /// Le siège est-il occupé par un bot (joueur parti depuis plus de 30 s) ?
   final bool estBot;
 
+  /// La carte du dessus de CE siège — présente **uniquement** dans la copie
+  /// destinée à son propriétaire.
+  ///
+  /// Le serveur place `ma_carte` dans l'objet du siège (`table.py`
+  /// `instantane()`), pas à la racine de l'instantané : le lire à la racine
+  /// revenait à ne jamais recevoir sa propre carte.
+  final String? maCarte;
+
   const SiegeInfo({
     required this.numero,
     required this.pseudo,
     required this.nbCartes,
     required this.present,
     required this.estBot,
+    this.maCarte,
   });
 
   factory SiegeInfo.fromJson(Map<String, dynamic> json) => SiegeInfo(
@@ -36,6 +45,7 @@ class SiegeInfo {
         nbCartes: (json['nb_cartes'] as num?)?.toInt() ?? 0,
         present: json['present'] as bool? ?? false,
         estBot: json['est_bot'] as bool? ?? false,
+        maCarte: json['ma_carte'] as String?,
       );
 }
 
@@ -130,9 +140,44 @@ class EtatTable {
       suivant: (json['suivant'] as num?)?.toInt(),
       defi: defiJson is Map<String, dynamic> ? DefiInfo.fromJson(defiJson) : null,
       nbCoups: (json['nb_coups'] as num?)?.toInt() ?? 0,
-      maCarte: json['ma_carte'] as String?,
+      maCarte: json['ma_carte'] as String? ??
+          _maCarteDuSiege(sieges, json),
     );
   }
+
+  /// Retrouve `ma_carte` dans l'objet du siège de ce client.
+  ///
+  /// Le serveur n'envoie la carte du dessus qu'à son propriétaire, et la
+  /// place dans l'objet du siège (`table.py` `instantane()`). Elle peut aussi
+  /// arriver à la racine selon la forme de l'instantané : on accepte les
+  /// deux, mais jamais celle d'un autre siège.
+  static String? _maCarteDuSiege(List<SiegeInfo> sieges, Map<String, dynamic> json) {
+    final numero = (json['mon_siege'] as num?)?.toInt() ??
+        (json['siege'] as num?)?.toInt() ??
+        -1;
+    if (numero < 0) return null;
+    for (final siege in sieges) {
+      if (siege.numero == numero) return siege.maCarte;
+    }
+    return null;
+  }
+
+  /// Copie de cet état avec une carte du dessus connue.
+  ///
+  /// Utilisé quand le canal privé (`ta_carte_suivante`) est arrivé avant
+  /// l'instantané : l'état ne doit pas perdre l'information.
+  EtatTable avecMaCarte(String carte) => EtatTable(
+        etat: etat,
+        type: type,
+        sieges: sieges,
+        monSiege: monSiege,
+        pli: pli,
+        resteNeutre: resteNeutre,
+        suivant: suivant,
+        defi: defi,
+        nbCoups: nbCoups,
+        maCarte: carte,
+      );
 
   /// Siège de ce client dans la liste, s'il existe.
   SiegeInfo? get monSiegeInfo {
