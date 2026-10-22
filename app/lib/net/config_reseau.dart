@@ -31,8 +31,23 @@ class ConfigurationReseau {
     this.origineJeu = '',
   });
 
-  /// Configuration publiée : tout est relatif à l'origine de la page.
-  static const ConfigurationReseau production = ConfigurationReseau();
+  /// Configuration publiée.
+  ///
+  /// **L'app native n'a pas d'origine implicite** : une URL relative
+  /// (`/corsian-battle/api/auth/invite`) n'a aucun sens pour une application
+  /// Android, qui n'a pas de page web à qui demander « d'où vient la
+  /// requête ». L'origine est donc **explicite** ici.
+  ///
+  /// Les URL *relatives* restent le bon choix pour la **web app** (la page
+  /// servie par nginx) : c'est ce qui permet de changer de domaine sans
+  /// republier. L'app, elle, a besoin de l'adresse absolue — et le
+  /// préfixe public reste le seul élément à changer côté serveur
+  /// (`docs/ARCHITECTURE.md` §8.2).
+  static const ConfigurationReseau production = ConfigurationReseau(
+    prefixePublic: '/corsian-battle',
+    origineAuth: 'https://soft.opik.net',
+    origineJeu: 'https://soft.opik.net',
+  );
 
   /// Configuration de développement : les deux backends en local.
   static const ConfigurationReseau developpement = ConfigurationReseau(
@@ -94,17 +109,26 @@ class ConfigurationReseau {
     return '${_versWs(origineJeu)}$prefixePublic/ws';
   }
 
+  /// Origine **publique** de l'invitation.
+  ///
+  /// Le lien partagé est une **page web**, servie par nginx, qui affiche le
+  /// code en grand : il ne s'agit jamais d'un lien vers l'API. En
+  /// développement, cette origine reste donc celle du domaine public — pas
+  /// `127.0.0.1`, que le destinataire ne pourrait pas joindre.
+  static const String origineInvitation = 'https://soft.opik.net';
+
+  /// Préfixe public de l'invitation.
+  String get prefixeInvitation => prefixePublic.isEmpty
+      ? '/corsian-battle'
+      : prefixePublic;
+
   /// URL de partage d'une table.
   ///
   /// Invitation **sans deep link** : la page web affiche le code en très
   /// grand et la consigne d'ouvrir l'app. Cela fonctionne dès maintenant,
   /// sans App Links natifs (`docs/PROTOCOLE.md` §4).
-  String urlPartage(String code) {
-    if (prefixePublic.isEmpty) {
-      return 'https://soft.opik.net/corsian-battle/#table=$code';
-    }
-    return '$prefixePublic/#table=$code';
-  }
+  String urlPartage(String code) =>
+      '$origineInvitation$prefixeInvitation/#table=$code';
 
   /// `http://` → `ws://`, `https://` → `wss://`.
   static String _versWs(String origine) {

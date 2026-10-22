@@ -117,7 +117,7 @@ class ClientJeu {
   int get siege => _siege;
 
   ClientJeu({ConfigurationReseau? config})
-      : _config = config ?? ConfigurationReseau.production;
+      : _config = config ?? ConfigurationReseau.depuisDefines();
 
   /// Flux des instantanés, **multi-abonnement**, avec rejeu de l'état courant.
   ///

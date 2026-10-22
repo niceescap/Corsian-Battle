@@ -41,7 +41,7 @@ class ClientAuth {
   final http.Client _http;
 
   ClientAuth({ConfigurationReseau? config, http.Client? httpClient})
-      : _config = config ?? ConfigurationReseau.production,
+      : _config = config ?? ConfigurationReseau.depuisDefines(),
         _http = httpClient ?? http.Client();
 
   /// Crée (ou retrouve) un compte invité.

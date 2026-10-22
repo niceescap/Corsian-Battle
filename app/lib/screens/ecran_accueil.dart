@@ -35,11 +35,18 @@ class _EcranAccueilState extends State<EcranAccueil> {
   final _ctrlNomAdversaire = TextEditingController(text: 'MARC');
 
   // --- Multijoueur en ligne ---------------------------------------------
+  /// Configuration réseau de la compilation.
+  ///
+  /// Une seule instance partagée par tous les clients de cet écran : le
+  /// REST, la session et la socket doivent viser **le même** serveur, sinon
+  /// la table créée d'un côté n'est pas celle rejointe de l'autre.
+  final ConfigurationReseau _config = ConfigurationReseau.depuisDefines();
+
   /// Session courante (compte invité). Créée à la demande.
-  final SessionJeu _session = SessionJeu();
+  late final SessionJeu _session = SessionJeu(config: _config);
 
   /// Client REST de jeu (tables, configuration).
-  final ClientJeuRest _rest = ClientJeuRest();
+  late final ClientJeuRest _rest = ClientJeuRest(config: _config);
 
   /// Le multijoueur en ligne est-il disponible ?
   bool _enLigneDisponible = false;
@@ -135,10 +142,7 @@ class _EcranAccueilState extends State<EcranAccueil> {
       final jeton = await _jeton();
       if (jeton == null) return;
       await _rest.rejoindreTable(jeton: jeton, code: code);
-      await _ouvrirTable(
-        code,
-        urlPartage: ConfigurationReseau.production.urlPartage(code),
-      );
+      await _ouvrirTable(code, urlPartage: _config.urlPartage(code));
     } on ErreurReseau catch (e) {
       if (!mounted) return;
       setState(() => _erreur = e.message);
@@ -154,7 +158,7 @@ class _EcranAccueilState extends State<EcranAccueil> {
   Future<void> _ouvrirTable(String code, {String? urlPartage}) async {
     final jeton = await _jeton();
     if (jeton == null) return;
-    final client = ClientJeu();
+    final client = ClientJeu(config: _config);
     try {
       await client.ouvrir(jeton: jeton, codeTable: code);
     } on ErreurReseau catch (e) {

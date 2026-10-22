@@ -90,7 +90,7 @@ class ClientJeuRest {
   final http.Client _http;
 
   ClientJeuRest({ConfigurationReseau? config, http.Client? httpClient})
-      : _config = config ?? ConfigurationReseau.production,
+      : _config = config ?? ConfigurationReseau.depuisDefines(),
         _http = httpClient ?? http.Client();
 
   /// Réglages publics du serveur.

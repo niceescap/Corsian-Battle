@@ -21,7 +21,7 @@ class SessionJeu {
 
   SessionJeu({ClientAuth? auth, ConfigurationReseau? config})
       : _auth = auth ?? ClientAuth(),
-        _config = config ?? ConfigurationReseau.production;
+        _config = config ?? ConfigurationReseau.depuisDefines();
 
   /// Session courante, si le joueur est identifié.
   Session? get session => _session;
