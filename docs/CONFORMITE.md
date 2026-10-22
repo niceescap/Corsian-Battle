@@ -14,10 +14,10 @@
 | Politique de confidentialité à URL publique, accessible sans compte | À publier | §3, page `privacy.html` |
 | URL de cette politique renseignée dans Play Console **et** accessible dans l'app | À faire | §3.4 |
 | Formulaire **Data Safety** cohérent avec la politique | À remplir | §4 |
-| **Suppression de compte** : dans l'app **et** sur une page web | Conçu | §5 |
+| **Suppression de compte** : dans l'app **et** sur une page web | **Fait** (app : écran Compte) · page web à faire | §5 |
 | Mécanisme de **signalement** et de **blocage** si contenu généré par les utilisateurs | Conçu | §6 |
 | **Modération** des contenus utilisateurs (pseudos) | Conçu | §6 |
-| Format **AAB** signé pour une nouvelle application | Bloqué par la CI actuelle | `DEPLOIEMENT.md` §9 |
+| Format **AAB** signé pour une nouvelle application | **Fait** (la CI construit l'AAB ; reste à le signer avec la clé de production) | `DEPLOIEMENT.md` §7.1 |
 | Niveau d'API cible imposé à la date de soumission | À vérifier dans la Console | §7 |
 | Questionnaire de classification (IARC) | À remplir | §8 |
 | Déclaration des publicités si AdMob est branché | Non branché en V1 | §9 |
