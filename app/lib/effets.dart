@@ -59,7 +59,7 @@ class FlashEcran extends StatelessWidget {
       tween: Tween(begin: 0.55, end: 0),
       duration: const Duration(milliseconds: 350),
       builder: (context, opacite, _) => IgnorePointer(
-        child: Container(color: couleur.withOpacity(opacite)),
+        child: Container(color: couleur.withValues(alpha: opacite)),
       ),
     );
   }

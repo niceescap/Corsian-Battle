@@ -64,6 +64,10 @@ class Siege:
     ma_carte: Optional[str] = None          # privé : carte du dessus de CE siège
     websocket: Any = None                   # starlette WebSocket, jamais sérialisé
 
+    # Dernier `seq_attendu` déjà consommé par ce siège. Sert à détecter un
+    # REJEU : le client renvoie un `seq_attendu` déjà vu, il rejoue un coup.
+    seq_pose: int = 0
+
     def libre(self) -> bool:
         return self.joueur_id is None
 

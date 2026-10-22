@@ -111,15 +111,15 @@ class EmplacementPub extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.28),
+          color: Colors.black.withValues(alpha: 0.28),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.14)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
         ),
         child: Center(
           child: Icon(
             Icons.campaign_outlined,
             size: min(hauteur * 0.34, 26),
-            color: Colors.white.withOpacity(0.30),
+            color: Colors.white.withValues(alpha: 0.30),
           ),
         ),
       ),

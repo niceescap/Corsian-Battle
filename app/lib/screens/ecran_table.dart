@@ -795,8 +795,8 @@ class _EcranTableState extends State<EcranTable>
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: estActif
-              ? const Color(0xFFFFD54F).withOpacity(0.16)
-              : Colors.black.withOpacity(0.34),
+              ? const Color(0xFFFFD54F).withValues(alpha: 0.16)
+              : Colors.black.withValues(alpha: 0.34),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: estActif ? const Color(0xFFFFD54F) : Colors.white24,
@@ -805,7 +805,7 @@ class _EcranTableState extends State<EcranTable>
           boxShadow: estActif
               ? [
                   BoxShadow(
-                    color: const Color(0xFFFFD54F).withOpacity(0.28),
+                    color: const Color(0xFFFFD54F).withValues(alpha: 0.28),
                     blurRadius: 16,
                   ),
                 ]
@@ -818,10 +818,10 @@ class _EcranTableState extends State<EcranTable>
             Stack(
               alignment: Alignment.center,
               children: [
-                CircleAvatar(
+                const CircleAvatar(
                   radius: 18,
                   backgroundColor: Colors.white12,
-                  child: const Icon(
+                  child: Icon(
                     Icons.smart_toy,
                     color: Color(0xFFFFD54F),
                     size: 21,
@@ -840,7 +840,7 @@ class _EcranTableState extends State<EcranTable>
             ),
             const SizedBox(width: 10),
             // Dos du paquet de l'adversaire.
-            Transform.scale(scale: 0.95, child: CarteWidget(largeur: 22, hauteur: 31)),
+            Transform.scale(scale: 0.95, child: const CarteWidget(largeur: 22, hauteur: 31)),
             const SizedBox(width: 10),
             // Nom (nom propre) + nombre de cartes (chiffre universel).
             Text(
@@ -907,7 +907,7 @@ class _EcranTableState extends State<EcranTable>
           ),
           boxShadow: [
             BoxShadow(
-              color: _feuDoublon ? Colors.red.withOpacity(0.5) : Colors.black45,
+              color: _feuDoublon ? Colors.red.withValues(alpha: 0.5) : Colors.black45,
               blurRadius: _feuDoublon ? 30 : 24,
               spreadRadius: 2,
             ),
@@ -920,14 +920,14 @@ class _EcranTableState extends State<EcranTable>
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: Colors.white.withOpacity(0.10),
+                color: Colors.white.withValues(alpha: 0.10),
                 width: 2,
               ),
             ),
             child: Icon(
               Icons.style_outlined,
               size: 34,
-              color: Colors.white.withOpacity(0.10),
+              color: Colors.white.withValues(alpha: 0.10),
             ),
           ),
         ),
@@ -948,7 +948,7 @@ class _EcranTableState extends State<EcranTable>
         child: ClipRRect(
           borderRadius: BorderRadius.circular(24),
           child: Container(
-            color: Colors.red.withOpacity(0.22),
+            color: Colors.red.withValues(alpha: 0.22),
             alignment: Alignment.center,
             child: AnimatedBuilder(
               animation: _ctrlIndice,

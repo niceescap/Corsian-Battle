@@ -1,5 +1,5 @@
 name: bataille_corse
-description: "Ébauche d'interface Flutter pour la Bataille Corse."
+description: "Bataille Corse — jeu de cartes, en duel contre la machine ou en ligne."
 publish_to: 'none'
 version: 0.1.0
 
@@ -10,6 +10,11 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
+  # Multijoueur en ligne : REST (auth + tables) et WebSocket (jeu).
+  http: ^1.2.0
+  web_socket_channel: ^3.0.0
+  # Session persistée (jetons, identifiant d'appareil).
+  shared_preferences: ^2.2.0
 
 dev_dependencies:
   flutter_test:

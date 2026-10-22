@@ -42,7 +42,7 @@ class FlashPli extends StatelessWidget {
         duration: Duration(milliseconds: duree),
         curve: Curves.easeOut,
         builder: (context, opacite, _) => Container(
-          color: couleur.withOpacity(opacite),
+          color: couleur.withValues(alpha: opacite),
         ),
       ),
     );

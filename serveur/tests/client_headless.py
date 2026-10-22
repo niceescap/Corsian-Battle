@@ -125,6 +125,7 @@ class Joueur:
         self.coups_joues = 0
         self.tapes = 0
         self.ma_carte: Optional[str] = None
+        self.dernier_seq = 0
         self.verbeux = verbeux
         self.rapide = rapide
 
@@ -140,7 +141,13 @@ class Joueur:
             return
         if not self.rapide:
             await asyncio.sleep(random.uniform(0.05, 0.30))
-        await socket.send(json.dumps({"type": "poser_carte"}))
+        # Le serveur limite à 20 messages / 2 s par socket (`PROTOCOLE.md` §13).
+        # En mode `--rapide` on garde une marge sous la rafale, sinon la
+        # socket se ferme en 4429 au milieu de la partie.
+        await asyncio.sleep(0.12)
+        await socket.send(
+            json.dumps({"type": "poser_carte", "seq_attendu": self.dernier_seq})
+        )
         self.coups_joues += 1
         self.log(f"pose {self.ma_carte or '?'}")
 
@@ -159,8 +166,22 @@ class Joueur:
         self.tapes += 1
         self.log(f"TAPE ({delai} ms)")
 
+    async def _ping_periodique(self, socket: Any) -> None:
+        """`ping` toutes les 25 s (`docs/PROTOCOLE.md` §1).
+
+        Sans lui, le serveur ferme le socket après 75 s de silence : la partie
+        se fige avec un joueur connecté et l'autre déconnecté.
+        """
+        while True:
+            await asyncio.sleep(25.0)
+            try:
+                await socket.send(json.dumps({"type": "ping"}))
+            except Exception:
+                return
+
     async def session(self, ws_url: str, code: str) -> Optional[Dict[str, Any]]:
         async with websockets.connect(ws_url, max_size=2**20) as socket:
+            tache_ping = asyncio.create_task(self._ping_periodique(socket))
             await socket.send(
                 json.dumps(
                     {
@@ -173,56 +194,64 @@ class Joueur:
                     }
                 )
             )
-            while True:
-                try:
-                    brut = await socket.recv()
-                except websockets.exceptions.ConnectionClosed as fermeture:
-                    self.log(f"socket fermé ({fermeture.code})")
-                    return None
-                message = json.loads(brut)
-                type_ = message.get("type")
-                donnees = message.get("d") or {}
-                seq = message.get("seq", 0)
+            try:
+                while True:
+                    try:
+                        brut = await socket.recv()
+                    except websockets.exceptions.ConnectionClosed as fermeture:
+                        self.log(f"socket fermé ({fermeture.code})")
+                        return None
+                    message = json.loads(brut)
+                    type_ = message.get("type")
+                    donnees = message.get("d") or {}
+                    seq = message.get("seq", 0)
+                    if seq > self.dernier_seq:
+                        self.dernier_seq = seq
 
-                if type_ == "bienvenue":
-                    self.siege = donnees.get("siege")
-                    self.log(f"connecté siège {self.siege} · table {donnees.get('table')}")
+                    if type_ == "bienvenue":
+                        self.siege = donnees.get("siege")
+                        self.log(f"connecté siège {self.siege} · table {donnees.get('table')}")
 
-                elif type_ == "table_etat":
-                    if donnees.get("etat") == "attente" and not self.pret:
-                        self.pret = True
-                        await socket.send(json.dumps({"type": "pret"}))
-                        self.log("prêt")
-                    elif donnees.get("suivant") == self.siege and seq > self.dernier_seq_joue:
-                        self.dernier_seq_joue = seq
-                        await self.jouer(socket)
+                    elif type_ == "table_etat":
+                        if donnees.get("etat") == "attente" and not self.pret:
+                            self.pret = True
+                            await socket.send(json.dumps({"type": "pret"}))
+                            self.log("prêt")
+                        elif donnees.get("suivant") == self.siege and seq > self.dernier_seq_joue:
+                            self.dernier_seq_joue = seq
+                            await self.jouer(socket)
 
-                elif type_ == "ta_carte_suivante":
-                    self.ma_carte = donnees.get("carte")
-                    self.log(f"[privé] ma carte du dessus : {self.ma_carte}")
+                    elif type_ == "ta_carte_suivante":
+                        self.ma_carte = donnees.get("carte")
+                        self.log(f"[privé] ma carte du dessus : {self.ma_carte}")
 
-                elif type_ == "carte_posee":
-                    if donnees.get("suivant") == self.siege and seq > self.dernier_seq_joue:
-                        self.dernier_seq_joue = seq
-                        await self.jouer(socket)
+                    elif type_ == "carte_posee":
+                        if donnees.get("suivant") == self.siege and seq > self.dernier_seq_joue:
+                            self.dernier_seq_joue = seq
+                            await self.jouer(socket)
 
-                elif type_ == "doublon_ouvert":
-                    await self.taper(socket, int(donnees.get("fenetre_ms", 900)))
+                    elif type_ == "doublon_ouvert":
+                        await self.taper(socket, int(donnees.get("fenetre_ms", 900)))
 
-                elif type_ == "pli_gagne":
-                    self.log(f"pli de {donnees.get('nb_cartes')} carte(s) → siège {donnees.get('gagnant')} ({donnees.get('raison')})")
+                    elif type_ == "pli_gagne":
+                        self.log(
+                            f"pli de {donnees.get('nb_cartes')} carte(s) → "
+                            f"siège {donnees.get('gagnant')} ({donnees.get('raison')})"
+                        )
 
-                elif type_ == "partie_finie":
-                    self.log("partie terminée")
-                    return donnees
+                    elif type_ == "partie_finie":
+                        self.log("partie terminée")
+                        return donnees
 
-                elif type_ == "erreur":
-                    if donnees.get("code") != "pas_ton_tour":
-                        self.log(f"erreur : {donnees.get('code')}")
+                    elif type_ == "erreur":
+                        if donnees.get("code") != "pas_ton_tour":
+                            self.log(f"erreur : {donnees.get('code')}")
 
-                elif type_ in ("joueur_rejoint", "joueur_pret", "joueur_parti",
-                               "partie_lancee", "compte_a_rebours", "pong"):
-                    self.log(f"· {type_}")
+                    elif type_ in ("joueur_rejoint", "joueur_pret", "joueur_parti",
+                                   "partie_lancee", "compte_a_rebours", "pong"):
+                        self.log(f"· {type_}")
+            finally:
+                tache_ping.cancel()
 
 
 # ---------------------------------------------------------------------------

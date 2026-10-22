@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -171,10 +172,27 @@ def _memoire_rss_mo() -> int:
     return -1
 
 
+# Pseudo « neutre » : en dev, on lui substitue un pseudo unique dérivé de
+# l'identité factice (cf. `_authentifie`).
+_PSEUDO_DEFAUT = "Joueur"
+
+
+def _pseudo_dev(sub: str) -> str:
+    """Pseudo unique et lisible pour un client de développement.
+
+    `sub` vaut par exemple `dev-dev-0` ou `dev-dev-3f2a` : on n'en garde que
+    la partie utile, et on la suffixe d'un index pour rester unique même quand
+    deux clients partagent le même préfixe.
+    """
+    brut = sub[4:] if sub.startswith("dev-") else sub
+    brut = re.sub(r"[^0-9A-Za-z]", "", brut)
+    return f"Dev{brut[-6:]}" if brut else "Dev"
+
+
 def _authentifie(
     credits: Optional[HTTPAuthorizationCredentials] = None,
     jeton_brut: Optional[str] = None,
-    pseudo_secours: str = "Joueur",
+    pseudo_secours: str = _PSEUDO_DEFAUT,
 ) -> Dict[str, Any]:
     """Vérifie le JWT (JWKS local) ou, en `MODE_SANS_AUTH`, accepte un jeton factice.
 
@@ -185,7 +203,13 @@ def _authentifie(
         identite = jeton_brut if jeton_brut is not None else (
             credits.credentials if credits is not None else ""
         )
-        return {"sub": f"dev-{identite or 'local'}", "pseudo": pseudo_secours, "typ": "acces"}
+        sub = f"dev-{identite or 'local'}"
+        # En dev, le pseudo doit rester UNIQUE par client : le moteur classe les
+        # joueurs par nom et refuse une table dont les pseudos se répètent.
+        # Un pseudo constant ("Joueur") faisait donc échouer tout lancement en
+        # `MODE_SANS_AUTH`. On le dérive de l'identité factice, qui est unique.
+        pseudo = pseudo_secours if pseudo_secours != _PSEUDO_DEFAUT else _pseudo_dev(sub)
+        return {"sub": sub, "pseudo": pseudo, "typ": "acces"}
     if credits is None or not credits.credentials:
         if not jeton_brut:
             raise ErreurApi("non_autorise", "Authentification requise.", 401)
@@ -445,6 +469,34 @@ async def _persister_partie(partie: PartieEnLigne, raison: str, gagnant_siege) -
     await asyncio.to_thread(_ecrire_partie, partie, raison, gagnant_siege)
 
 
+def _ids_joueurs(table) -> set:
+    """Identifiants des joueurs **occupant** un siège (jamais `None`)."""
+    ids = set()
+    for siege in table.sieges:
+        if siege.joueur_id:
+            ids.add(siege.joueur_id)
+    return ids
+
+
+def _joueurs_connus(conn, ids) -> set:
+    """Ensemble des `joueur_id` réellement présents dans `joueurs`.
+
+    En développement (`MODE_SANS_AUTH`), les identités sont factices et
+    n'existent pas en base : écrire une participation pour elles violerait
+    la clé étrangère.
+    """
+    reels = set()
+    for identifiant in ids:
+        if not identifiant:
+            continue
+        ligne = conn.execute(
+            "SELECT 1 FROM joueurs WHERE id = ?", (identifiant,)
+        ).fetchone()
+        if ligne is not None:
+            reels.add(identifiant)
+    return reels
+
+
 def _ecrire_partie(partie: PartieEnLigne, raison: str, gagnant_siege) -> None:
     partie_id = uuid.uuid4().hex
     table = partie.table
@@ -452,6 +504,10 @@ def _ecrire_partie(partie: PartieEnLigne, raison: str, gagnant_siege) -> None:
     if gagnant_siege is not None:
         siege_gagnant = table.siege(gagnant_siege)
         gagnant_id = siege_gagnant.joueur_id if siege_gagnant is not None else None
+    if gagnant_id is not None:
+        with bd.connexion(cfg.base_chemin) as conn:
+            if gagnant_id not in _joueurs_connus(conn, {gagnant_id}):
+                gagnant_id = None
     with bd.connexion(cfg.base_chemin) as conn:
         bd.creer_partie(
             conn,
@@ -469,9 +525,15 @@ def _ecrire_partie(partie: PartieEnLigne, raison: str, gagnant_siege) -> None:
             nb_doublons=partie.doublons_ouverts,
             duree_ms=int((time.time() - partie.lance_le) * 1000),
         )
+        # En `MODE_SANS_AUTH`, le joueur n'existe pas dans `joueurs` : on
+        # n'écrit alors pas de participation, sinon la clé étrangère échoue.
+        # La partie reste enregistrée (historique, statistiques par table).
+        ids_connus = _joueurs_connus(conn, _ids_joueurs(table))
         for ligne in partie.statistiques():
             siege = table.siege(ligne["siege"])
             if siege is None:
+                continue
+            if siege.joueur_id not in ids_connus:
                 continue
             bd.creer_participation(
                 conn,
@@ -568,7 +630,8 @@ async def websocket_jeu(websocket: WebSocket) -> None:
 
     try:
         contenu = _authentifie(
-            jeton_brut=donnees.get("jeton"), pseudo_secours=str(donnees.get("pseudo") or "Testeur")
+            jeton_brut=donnees.get("jeton"),
+            pseudo_secours=str(donnees.get("pseudo") or _PSEUDO_DEFAUT),
         )
     except ErreurApi:
         await _fermer(websocket, 4401)
@@ -702,14 +765,23 @@ async def _traiter(table: Table, siege: Siege, message: Dict[str, Any]) -> bool:
                 _message_erreur("pas_encore_en_partie", "La table n'est pas encore en jeu."),
             )
             return True
-        if seq_attendu is not None and seq_attendu != table.seq:
-            # Action périmée (double appui, retard) : refusée plutôt que
-            # rejouée — c'est le rôle de `seq_attendu` (`PROTOCOLE.md` §2).
+        if seq_attendu is not None and seq_attendu <= siege.seq_pose:
+            # REJEU : ce siège a déjà consommé un `seq_attendu` au moins aussi
+            # élevé. On refuse au lieu de rejouer le coup (`PROTOCOLE.md` §2).
+            #
+            # On ne compare PAS à `table.seq` : ce compteur est incrémenté par
+            # TOUT message publié, y compris les messages privés adressés à
+            # un autre siège (`ta_carte_suivante`). Un client parfaitement
+            # synchronisé verrait donc son `seq_attendu` systématiquement en
+            # retard d'un cran et serait refusé à chaque coup. La protection
+            # utile est celle contre le rejeu, pas contre la latence.
             await _envoyer(
                 siege.websocket,
                 _message_erreur("coup_perime", "Coup refusé : la table a avancé."),
             )
             return True
+        if seq_attendu is not None:
+            siege.seq_pose = seq_attendu
         await table.partie.poser_carte(siege.numero)
         return True
 

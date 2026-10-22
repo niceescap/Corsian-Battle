@@ -113,10 +113,11 @@ class JoueurPartie {
 
 enum PhasePartie { attenteHumain, reflexionBot, courseTap, partieFinie }
 
-class _CartePli {
+/// Une carte posée sur le pli, avec son poseur.
+class CartePli {
   final String code;
   final int poseur;
-  const _CartePli(this.code, this.poseur);
+  const CartePli(this.code, this.poseur);
 }
 
 class PartieLocale extends ChangeNotifier {
@@ -156,7 +157,7 @@ class PartieLocale extends ChangeNotifier {
   /// (Piège connu du projet : ne PAS déclarer `late`, sinon crash au
   /// premier frame, avant la première distribution.)
   List<JoueurPartie> joueurs = [];
-  final List<_CartePli> pli = [];
+  final List<CartePli> pli = [];
   final List<String> _resteNeutre = [];
 
   int indexCourant = 0;
@@ -310,7 +311,7 @@ class PartieLocale extends ChangeNotifier {
     derniereRaisonPli = 'Pli';
     final j = joueurs[idx];
     final code = j.tas.removeFirst();
-    pli.add(_CartePli(code, idx));
+    pli.add(CartePli(code, idx));
     _coups++;
 
     // La mesure du rythme humain se fait AVANT la notification UI : le

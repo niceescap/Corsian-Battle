@@ -38,10 +38,10 @@ class FlecheJoueur extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.34),
+            color: Colors.black.withValues(alpha: 0.34),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: aSec ? Colors.white24 : const Color(0xFFFFD54F).withOpacity(0.5),
+              color: aSec ? Colors.white24 : const Color(0xFFFFD54F).withValues(alpha: 0.5),
             ),
           ),
           child: Row(
@@ -50,7 +50,7 @@ class FlecheJoueur extends StatelessWidget {
               // Dos de paquet miniature = identité visuelle de l'adversaire.
               Transform.scale(
                 scale: 0.9,
-                child: CarteWidget(largeur: 16, hauteur: 23),
+                child: const CarteWidget(largeur: 16, hauteur: 23),
               ),
               const SizedBox(width: 6),
               Text(
