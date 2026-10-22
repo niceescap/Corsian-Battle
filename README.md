@@ -77,11 +77,29 @@ bash serveur/lancer_local.sh     # les deux services en premier plan
 
 ## Build de l'APK
 
-L'arbre `android/` est versionné. GitHub Actions construit l'APK à chaque
-push sur `app/**` et publie l'artefact (avec son empreinte SHA-256) :
+L'arbre `android/` est versionné. GitHub Actions construit et publie les
+binaires à chaque push sur `app/**` :
 
 - `.github/workflows/build-apk.yml` — analyse statique + tests bloquants,
-  puis `flutter build apk --debug`.
+  puis `flutter build apk --debug` (recette) **et** `flutter build apk
+  --release` + `flutter build appbundle --release` (55 Mo, format Play).
+- L'artefact `apk-debug` est toujours produit. L'artefact `release-signe`
+  (APK + AAB + empreintes SHA-256) n'est produit **que si** les secrets de
+  signature du dépôt sont présents ; sinon la CI émet un avertissement et ne
+  publie rien de signé — elle ne prétend jamais livrer un binaire publiable
+  qu'elle ne signe pas vraiment.
+- Un tag `v*` publie en plus une **release GitHub** avec les binaires signés.
+
+La procédure de création du keystore et de remplissage des secrets est
+documentée dans [`docs/DEPLOIEMENT.md`](docs/DEPLOIEMENT.md) §7.1.
+
+En local :
+
+```
+cd app
+flutter build apk --release          # sans secrets : signé avec les clés de debug
+flutter build appbundle --release
+```
 
 ## Feuille de route
 
