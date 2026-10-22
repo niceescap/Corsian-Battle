@@ -3,7 +3,8 @@
 > Découpage en six étapes, chacune **livrable et vérifiable seule**. Aucune étape ne dépend
 > d'une décision prise à l'étape suivante.
 >
-> **État actuel : S0 et S1 faits, S2 et S3 côté serveur, S2 côté client livrée.**
+> **État actuel : S0 et S1 faits, S2 et S3 côté serveur, S2 côté client livrée, CI de
+> publication en place.**
 >
 > - **S0** : nginx posé (les trois blocs `location`), racine statique vérifiée, domaine tranché
 >   (`soft.opik.net/corsian-battle/` en V1), budget mémoire encore à confirmer.
@@ -15,6 +16,11 @@
 > - **S5 (partiel)** : l'arbre `android/` est **versionné** — c'était le dernier frein à un AAB
 >   signé. Le nom sous l'icône est « Corsian Battle », la permission `INTERNET` est présente, et
 >   la CI construit un APK **sans** régénérer le scaffolding.
+> - **S5 (chaîne de build)** : la CI construit l'APK **et** l'AAB en `--release` (55 Mo), et un
+>   tag `v*` publie une **release GitHub** avec les binaires signés et leurs empreintes SHA-256.
+>   La signature vient des secrets `KEYSTORE_BASE64` / `KEYSTORE_PASSWORD` / `KEY_ALIAS` /
+>   `KEY_PASSWORD` ; **sans eux, la CI ne produit pas d'artefact « signé »** et le dit
+>   (`docs/DEPLOIEMENT.md` §7.1).
 >
 > Restent en attente : le budget mémoire (`DEPLOIEMENT.md` §10.3), la politique de sauvegarde du
 > keystore, et la publication elle-même (AAB signé, fiche Play, Data Safety).
@@ -142,8 +148,10 @@ politique de confidentialité et de suppression), test interne → test fermé �
 
 **Critères d'acceptation**
 
-- [ ] `flutter build appbundle --release` produit un AAB signé, installable en test interne
-- [ ] Le nom sous l'icône est « Corsian Battle », pas `bataille_corse`
+- [x] `flutter build appbundle --release` produit un AAB **construit par la CI** (55 Mo)
+- [ ] L'AAB est **signé** avec la clé de production (les 4 secrets sont renseignés sur le dépôt)
+- [ ] Un tag `v*` publie une release GitHub avec l'APK et l'AAB + empreintes SHA-256
+- [x] Le nom sous l'icône est « Corsian Battle », pas `bataille_corse`
 - [ ] Le Data Safety est cohérent avec `CONFORMITE.md` §4
 - [ ] L'URL de suppression de compte fonctionne depuis un navigateur sans app installée
 - [ ] L'app passe la revue Play sans demande de correction

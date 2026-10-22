@@ -6,11 +6,23 @@ on:
     paths:
       - 'app/**'
       - '.github/workflows/build-apk.yml'
+    # Un tag `v*` déclenche la version signée et publie une release GitHub.
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/build-apk.yml'
   workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: '3.44.6'
 
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +33,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.6'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
@@ -43,16 +55,17 @@ jobs:
         working-directory: app
         run: flutter test
 
+      # --- Artefact de recette : APK debug, toujours produit --------------
       - name: Construit l'APK debug
         working-directory: app
         run: flutter build apk --debug
 
-      - name: Prépare l'artefact
+      - name: Prépare l'artefact debug
         run: |
           cp app/build/app/outputs/flutter-apk/app-debug.apk \
              corsian-battle-debug.apk
-          ls -lh corsian-battle-debug.apk
           sha256sum corsian-battle-debug.apk > corsian-battle-debug.apk.sha256
+          ls -lh corsian-battle-debug.apk
 
       - uses: actions/upload-artifact@v4
         with:
@@ -61,3 +74,75 @@ jobs:
             corsian-battle-debug.apk
             corsian-battle-debug.apk.sha256
           if-no-files-found: error
+
+      # --- Version signée -------------------------------------------------
+      # Le keystore ne transite QUE par les secrets du dépôt : il n'est
+      # jamais commité. Sans les secrets, le build retombe sur les clés de
+      # debug et l'artefact est marqué « non signé » — la CI ne ment pas.
+      - name: Expose la clé de signature
+        id: signature
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] \
+             && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "disponible=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "disponible=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Secrets de signature absents : le build release est signé avec les clés de DEBUG et n'est PAS publiable."
+          fi
+
+      - name: Construit l'APK release
+        if: steps.signature.outputs.disponible == 'true'
+        working-directory: app
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: flutter build apk --release
+
+      - name: Construit l'AAB release
+        if: steps.signature.outputs.disponible == 'true'
+        working-directory: app
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: flutter build appbundle --release
+
+      - name: Prépare les artefacts release
+        if: steps.signature.outputs.disponible == 'true'
+        run: |
+          cp app/build/app/outputs/flutter-apk/app-release.apk \
+             corsian-battle-release.apk
+          cp app/build/app/outputs/bundle/release/app-release.aab \
+             corsian-battle-release.aab
+          sha256sum corsian-battle-release.apk corsian-battle-release.aab \
+            > corsian-battle-release.sha256
+          ls -lh corsian-battle-release.*
+
+      - uses: actions/upload-artifact@v4
+        if: steps.signature.outputs.disponible == 'true'
+        with:
+          name: release-signe
+          path: |
+            corsian-battle-release.apk
+            corsian-battle-release.aab
+            corsian-battle-release.sha256
+          if-no-files-found: error
+
+      # --- Release GitHub (uniquement sur un tag v*) ------------------------
+      - name: Publie la release GitHub
+        if: startsWith(github.ref, 'refs/tags/v') && steps.signature.outputs.disponible == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            corsian-battle-release.apk
+            corsian-battle-release.aab
+            corsian-battle-release.sha256
+          generate_release_notes: true

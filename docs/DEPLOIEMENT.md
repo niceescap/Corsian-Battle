@@ -251,6 +251,53 @@ Recette complète en §6 de `ENDPOINTS.md`.
    vers la fiche Play pour l'AAB.
 5. iOS : aucun fichier à servir (TestFlight uniquement) — encart « bientôt ».
 
+### 7.1 Chaîne de signature, pas à pas
+
+La CI (`build-apk.yml`) construit l'APK et l'AAB **release**, mais ne les publie en artefact
+`signe` que si les quatre secrets du dépôt sont présents. Sans eux, le build retombe
+silencieusement sur les clés de debug — d'où l'avertissement `::warning::` et l'absence
+d'artefact signé : **la CI ne prétend jamais produire un binaire publiable qu'elle ne signe
+pas vraiment.**
+
+**Créer le keystore (une seule fois, sur une machine de confiance) :**
+
+```bash
+keytool -genkeypair -v \
+  -keystore corsian-battle-upload.jks \
+  -alias corsian-battle \
+  -keyalg RSA -keysize 4096 -validity 10000
+```
+
+L'empreinte SHA-256 de la clé se note **ailleurs** que dans le dépôt :
+
+```bash
+keytool -list -v -keystore corsian-battle-upload.jks -alias corsian-battle
+```
+
+**Renseigner les secrets du dépôt** (Settings → Secrets and variables → Actions) :
+
+| Secret | Contenu |
+|---|---|
+| `KEYSTORE_BASE64` | `base64 -w0 corsian-battle-upload.jks` — le fichier **entier**, en une ligne |
+| `KEYSTORE_PASSWORD` | mot de passe du keystore |
+| `KEY_ALIAS` | `corsian-battle` |
+| `KEY_PASSWORD` | mot de passe de la clé |
+
+**Publier une version :**
+
+```bash
+git tag -a v0.1.0 -m "Corsian Battle 0.1.0"
+git push origin v0.1.0
+```
+
+Le tag déclenche la CI, qui publie une **release GitHub** avec l'APK signé, l'AAB signé et
+leurs empreintes SHA-256. L'AAB se téléverse ensuite dans la Play Console (test interne
+d'abord).
+
+**Règle absolue :** le fichier `.jks` ne quitte jamais la machine qui l'a créé, à part vers les
+secrets GitHub. Il ne doit jamais entrer dans le dépôt, ni dans une archive, ni dans un canal
+de messagerie.
+
 ## 8. Exploitation courante
 
 ```bash
@@ -284,9 +331,9 @@ migration a été appliquée (les migrations ne sont pas réversibles automatiqu
 | Contrainte | Conséquence |
 |---|---|
 | Le jeton GitHub de l'assistant n'a pas le scope `workflow` | Impossible de créer/modifier un YAML de workflow ni de déclencher `workflow_dispatch` (403). **Nicolas pose les YAML dans l'UI** et lance les builds |
-| `build-apk.yml` régénère `android/` par `flutter create` à chaque build | Tout SDK exigeant une configuration native est impossible : AdMob App ID, Google Sign-In, **App Links d'invitation**, notifications. D'où le choix d'une invitation par **code + page web** (`PROTOCOLE.md` §4) qui fonctionne sans rien de natif |
-| Build actuel en `--debug` (~85 Mo) | Non publiable. S5 : passer en `--release` + AAB + signature |
-| Pas de `release`/`tag` dans le workflow | Les artefacts se récupèrent via l'API JSON ; une voie « release GitHub » reste à poser par Nicolas |
+| ~~`build-apk.yml` régénère `android/` par `flutter create`~~ | **Résolu** : `android/` est versionné, la CI ne régénère plus le scaffolding. Tout SDK natif redevient possible (AdMob, Google Sign-In, App Links, notifications) |
+| ~~Build actuel en `--debug`~~ | **Résolu** : la CI construit l'APK **et** l'AAB en `--release` (55 Mo). Ils ne sont publiés en artefact `release-signe` que si les secrets de signature existent |
+| ~~Pas de `release`/`tag` dans le workflow~~ | **Résolu** : un tag `v*` déclenche une **release GitHub** avec l'APK et l'AAB signés + empreintes SHA-256 (§7.1) |
 | Aucun macOS disponible | Pas de build iOS, donc pas de TestFlight tant qu'un accès Mac n'existe pas |
 
 ## 10. Points bloquants — état
