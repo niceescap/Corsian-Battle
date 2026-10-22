@@ -37,15 +37,21 @@ android {
     //
     // Voir `docs/DEPLOIEMENT.md` §7 pour la procédure de création du
     // keystore et sa politique de sauvegarde.
-    val envKeystoreB64: String? = System.getenv("KEYSTORE_BASE64")
-    val envKeystorePass: String? = System.getenv("KEYSTORE_PASSWORD")
-    val envKeyAlias: String? = System.getenv("KEY_ALIAS")
-    val envKeyPass: String? = System.getenv("KEY_PASSWORD")
+    // GitHub Actions injecte les secrets **absents** comme des chaînes
+    // VIDES, pas comme des variables manquantes : tester `!= null` ne
+    // suffirait pas, le décodage base64 d'une chaîne vide échouerait.
+    val envKeystoreB64: String = System.getenv("KEYSTORE_BASE64") ?: ""
+    val envKeystorePass: String = System.getenv("KEYSTORE_PASSWORD") ?: ""
+    val envKeyAlias: String = System.getenv("KEY_ALIAS") ?: ""
+    val envKeyPass: String = System.getenv("KEY_PASSWORD") ?: ""
+
+    val signatureDisponible: Boolean = envKeystoreB64.isNotBlank() &&
+        envKeystorePass.isNotBlank() &&
+        envKeyAlias.isNotBlank() &&
+        envKeyPass.isNotBlank()
 
     signingConfigs {
-        if (envKeystoreB64 != null && envKeystorePass != null &&
-            envKeyAlias != null && envKeyPass != null
-        ) {
+        if (signatureDisponible) {
             create("release") {
                 // Le secret arrive en base64 : on le décode dans un fichier
                 // temporaire, hors du dépôt, dans le répertoire de build.
