@@ -40,9 +40,17 @@ uniquement par le WebSocket.**
 { "type": "poser_carte", "seq_attendu": 148, "d": { } }
 ```
 
-- `seq_attendu` : dernier `seq` serveur appliqué par le client. Si le serveur a déjà avancé
-  au-delà, l'action est refusée (`erreur` code `coup_perime`) au lieu d'être rejouée : c'est la
-  protection contre le rejeu et les doubles appuis.
+- `seq_attendu` : dernier `seq` serveur appliqué par le client. Si **ce siège** a déjà consommé
+  un `seq_attendu` au moins aussi élevé, l'action est refusée (`erreur` code `coup_perime`)
+  au lieu d'être rejouée : c'est la protection contre le rejeu et les doubles appuis.
+
+  **La comparaison est faite par siège, pas contre le compteur global de la table.** Le `seq`
+  de la table est incrémenté par *tout* message publié, y compris les messages privés adressés
+  à un autre siège (`ta_carte_suivante`) : un client parfaitement synchronisé verrait donc son
+  `seq_attendu` en retard d'un cran en permanence, et verrait *tous* ses coups refusés. La
+  protection utile est celle contre le **rejeu**, pas contre la latence. Un client qui a du
+  retard — parce qu'il a raté un message — reste accepté : il joue sur l'état courant du
+  serveur, qui reste l'unique autorité.
 
 Aucun champ superflu : pas d'horodatage client (inutilisable), pas d'identifiant de joueur
 (déduit du socket authentifié), jamais de contenu de carte envoyé par le client.
