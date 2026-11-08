@@ -45,8 +45,8 @@ class ConfigurationReseau {
   /// (`docs/ARCHITECTURE.md` §8.2).
   static const ConfigurationReseau production = ConfigurationReseau(
     prefixePublic: '/corsian-battle',
-    origineAuth: 'https://soft.opik.net',
-    origineJeu: 'https://soft.opik.net',
+    origineAuth: 'https://corsian.hqwi.re',
+    origineJeu: 'https://corsian.hqwi.re',
   );
 
   /// Configuration de développement : les deux backends en local.
@@ -115,7 +115,7 @@ class ConfigurationReseau {
   /// code en grand : il ne s'agit jamais d'un lien vers l'API. En
   /// développement, cette origine reste donc celle du domaine public — pas
   /// `127.0.0.1`, que le destinataire ne pourrait pas joindre.
-  static const String origineInvitation = 'https://soft.opik.net';
+  static const String origineInvitation = 'https://corsian.hqwi.re';
 
   /// Préfixe public de l'invitation.
   String get prefixeInvitation => prefixePublic.isEmpty
