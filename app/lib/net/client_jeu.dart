@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:meta/meta.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../diagnostic.dart';
 import 'config_reseau.dart';
 import 'erreur_reseau.dart';
 import 'modeles_proto.dart';
@@ -266,7 +267,10 @@ class ClientJeu {
   }
 
   /// Envoie `pret` (marque le siège prêt en `attente`).
-  void marquerPret() => _envoyer({'type': 'pret'});
+  void marquerPret() {
+    tracer('Message pret envoyé pour la table ${_codeTable ?? 'inconnue'}');
+    _envoyer({'type': 'pret'});
+  }
 
   /// Pose **la carte du dessus** du siège : le client ne choisit jamais
   /// de carte, c'est le serveur qui sait laquelle c'est.
@@ -407,6 +411,23 @@ class ClientJeu {
       case 'bienvenue':
       case 'table_etat':
         var etat = EtatTable.fromJson(donnees);
+        if (type == 'table_etat') {
+          final sieges = donnees['sieges'];
+          final listeSieges = sieges is List ? sieges : const <dynamic>[];
+          final occupes = listeSieges.where((siege) {
+            if (siege is! Map) return false;
+            final pseudo = siege['pseudo'];
+            return siege['present'] == true ||
+                (pseudo is String && pseudo.isNotEmpty);
+          }).length;
+          final prets = listeSieges.where(
+            (siege) => siege is Map && siege['pret'] == true,
+          ).length;
+          tracer(
+            'Instantané table ${_codeTable ?? 'inconnue'} : '
+            'état=${etat.etat}, sièges occupés=$occupes, prêts=$prets',
+          );
+        }
         if (etat.monSiege >= 0) _siege = etat.monSiege;
         // L'instantané peut porter la carte du dessus (dans l'objet du
         // siège) : on la mémorise, pour que le flux `maCarte` la restitue
@@ -456,7 +477,13 @@ class ClientJeu {
 
   void _surFermeture() {
     final code = _canal?.closeCode;
+    final raison = _canal?.closeReason;
     codeFermeture = code;
+    tracer(
+      'WebSocket fermée pour la table ${_codeTable ?? 'inconnue'} : '
+      'code=${code ?? 'inconnu'}'
+      '${raison == null || raison.isEmpty ? '' : ', raison=$raison'}',
+    );
     _ouvert = false;
     _minuteurPing?.cancel();
     _minuteurPing = null;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../diagnostic.dart';
 import '../moteur/partie_locale.dart';
 import '../net/client_auth.dart';
 import '../net/client_jeu.dart';
@@ -151,6 +152,7 @@ class _EcranAccueilState extends State<EcranAccueil> {
         jeton: jeton,
         type: _mode == ModePartie.duel ? 'duel' : 'table_quatre',
       );
+      tracer('Table créée : ${table.code}');
       await _ouvrirTable(table.code, urlPartage: table.urlPartage);
     } on ErreurReseau catch (e) {
       if (!mounted) return;
@@ -173,9 +175,18 @@ class _EcranAccueilState extends State<EcranAccueil> {
       _erreur = null;
     });
     try {
-      final jeton = await _jeton();
-      if (jeton == null) return;
-      await _rest.rejoindreTable(jeton: jeton, code: code);
+      try {
+        final jeton = await _jeton();
+        if (jeton == null) {
+          tracer('Entrée par code $code : erreur, jeton absent');
+          return;
+        }
+        await _rest.rejoindreTable(jeton: jeton, code: code);
+        tracer('Entrée par code $code : réussie');
+      } catch (e) {
+        tracer('Entrée par code $code : erreur $e');
+        rethrow;
+      }
       await _ouvrirTable(code, urlPartage: _config.urlPartage(code));
     } on ErreurReseau catch (e) {
       if (!mounted) return;
@@ -190,8 +201,17 @@ class _EcranAccueilState extends State<EcranAccueil> {
   /// La salle affiche le code à 6 caractères (l'invitation) et les joueurs
   /// présents ; elle cède la place à l'écran de jeu quand la partie démarre.
   Future<void> _ouvrirTable(String code, {String? urlPartage}) async {
-    final jeton = await _jeton();
-    if (jeton == null) return;
+    String? jeton;
+    try {
+      jeton = await _jeton();
+    } catch (e) {
+      tracer('Ouverture WebSocket impossible avant demande pour $code : $e');
+      rethrow;
+    }
+    if (jeton == null) {
+      tracer('Ouverture WebSocket non demandée pour $code : jeton absent');
+      return;
+    }
     // Le client redemande un jeton valide à chaque ouverture de socket :
     // c'est ce qui permet de se reconnecter en cours de partie alors que le
     // jeton d'accès a expiré (15 min de durée de vie).
@@ -199,13 +219,19 @@ class _EcranAccueilState extends State<EcranAccueil> {
       config: _config,
       rafraichirJeton: _session.jetonValide,
     );
+    tracer('Ouverture WebSocket demandée pour la table $code');
     try {
       await client.ouvrir(jeton: jeton, codeTable: code);
+      tracer('WebSocket ouverte pour la table $code');
     } on ErreurReseau catch (e) {
+      tracer('WebSocket en erreur pour la table $code : $e');
       if (!mounted) return;
       setState(() => _erreur = e.message);
       await client.fermer();
       return;
+    } catch (e) {
+      tracer('WebSocket en erreur pour la table $code : $e');
+      rethrow;
     }
     if (!mounted) {
       await client.fermer();
@@ -295,6 +321,7 @@ class _EcranAccueilState extends State<EcranAccueil> {
                       format: FormatPub.rectangleMoyen,
                       largeurDisponible: 300,
                     ),
+                    const PanneauDiagnostic(),
                   ],
                 ),
               ),

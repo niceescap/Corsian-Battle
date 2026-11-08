@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../diagnostic.dart';
 import '../net/client_jeu.dart';
 import '../net/modeles_proto.dart';
 import 'ecran_table_en_ligne.dart';
@@ -296,6 +297,7 @@ class _EcranSalleState extends State<EcranSalle> {
                         ),
                       ],
                     ),
+                    const PanneauDiagnostic(),
                   ],
                 ),
               ),
