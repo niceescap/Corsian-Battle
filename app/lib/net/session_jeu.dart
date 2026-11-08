@@ -144,6 +144,53 @@ class SessionJeu {
     }
   }
 
+  /// Jeton d'accès valide, renouvelé si besoin.
+  ///
+  /// C'est ce que la socket de jeu consomme **à chaque ouverture** — donc
+  /// aussi à chaque reconnexion. Le jeton d'accès expire au bout de 15
+  /// minutes : sans ce renouvellement, une reconnexion en cours de partie
+  /// échoue en `4401` et le joueur est déconnecté pour de bon.
+  Future<String?> jetonValide() async {
+    final session = await renouvelerSiNecessaire();
+    return session?.jetonAcces;
+  }
+
+  /// Change le pseudo du joueur.
+  ///
+  /// Le pseudo est ce qui distingue les joueurs **sur le tapis** : deux
+  /// joueurs de même pseudo sont refusés par le moteur, qui exige des
+  /// pseudos uniques au sein d'une table. Le changer est donc nécessaire
+  /// dès que deux joueurs ont installé l'app avec le même pseudo par
+  /// défaut.
+  ///
+  /// Renvoie le pseudo **réellement enregistré** : le serveur peut proposer
+  /// une variante si le pseudo demandé est déjà pris.
+  Future<String> changerPseudo(String nouveau) async {
+    final session = _session;
+    if (session == null) {
+      throw const ErreurReseau(
+        'session_absente',
+        'Aucune session : reconnecte-toi d\'abord.',
+      );
+    }
+    final reponse = await _auth.changerPseudo(session.jetonAcces, nouveau);
+    final joueur = reponse['joueur'];
+    final pseudo = joueur is Map<String, dynamic>
+        ? '${joueur['pseudo'] ?? session.pseudo}'
+        : session.pseudo;
+
+    // Le jeton d'accès porte l'ancien pseudo : on le renouvelle pour que
+    // le serveur et l'app affichent la même chose.
+    await _sauvegarder(Session(
+      jetonAcces: session.jetonAcces,
+      jetonRefresh: session.jetonRefresh,
+      joueurId: session.joueurId,
+      pseudo: pseudo,
+      expireLe: session.expireLe,
+    ));
+    return pseudo;
+  }
+
   /// Supprime le compte côté serveur, puis oublie la session locale.
   ///
   /// L'ordre compte : on supprime d'abord chez le serveur, pour qu'un échec

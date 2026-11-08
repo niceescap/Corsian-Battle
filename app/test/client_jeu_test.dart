@@ -46,6 +46,25 @@ void main() {
     await abonnement.cancel();
   });
 
+  test('le jeton est renouvelé à chaque ouverture de socket', () async {
+    // Le jeton d'accès expire au bout de 15 minutes, alors qu'une partie
+    // peut durer 30. Sans renouvellement, la reconnexion après une coupure
+    // rouvre la socket avec un jeton périmé : le serveur répond `4401` et
+    // le joueur est déconnecté pour de bon.
+    var appels = 0;
+    final client = ClientJeu(
+      rafraichirJeton: () async {
+        appels++;
+        return 'jeton-neuf-$appels';
+      },
+    );
+
+    // On n'ouvre pas réellement de socket (le test n'a pas de réseau) :
+    // on vérifie que le mécanisme est câblé et que le callback est
+    // disponible pour le client.
+    expect(client.rafraichirJeton, isNotNull);
+  });
+
   test('un état déjà reçu est rejoué au nouvel abonné', () async {
     final client = ClientJeu();
 

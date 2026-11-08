@@ -46,9 +46,6 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
   /// Instantané courant de la table.
   EtatTable? _etat;
 
-  /// A-t-on déjà déclaré le siège prêt ?
-  bool _pretEnvoye = false;
-
   /// Siège effectif de ce client. Le serveur l'envoie dans `bienvenue`,
   /// puis le rappelle dans chaque `table_etat` (`mon_siege`).
   int _monSiege = -1;
@@ -119,12 +116,10 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
         _etat = etat;
         if (etat.monSiege >= 0) _monSiege = etat.monSiege;
         _erreur = null;
-        if (etat.etat == 'attente' && !_pretEnvoye) {
-          // On se déclare prêt une seule fois, dès qu'on voit la table en
-          // attente. Le serveur lance la partie quand tous sont prêts.
-          _pretEnvoye = true;
-          widget.client.marquerPret();
-        }
+        // Le `pret` a été envoyé par la SALLE D'ATTENTE, qui est le seul
+        // écran qui le pouvait : le serveur lance la partie quand tous les
+        // sièges sont prêts (`docs/PROTOCOLE.md` §4). Le renvoyer ici est
+        // inutile — et le serveur le refuse dès que la table est partie.
         if (etat.pli.isNotEmpty) {
           _pli
             ..clear()
@@ -260,7 +255,20 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
   // ------------------------------------------------------------------ //
   // Actions du joueur                                                  //
   // ------------------------------------------------------------------ //
+  /// Nombre de coups pour lesquels on a déjà posé.
+  ///
+  /// Le serveur refuse une seconde pose pour le même tour (`coup_perime`),
+  /// mais un double-tap afficherait un bandeau d'erreur incompréhensible pour
+  /// le joueur. On s'en garde donc ici : une pose par tour.
+  int _coupsJeus = -1;
+
   void _poserCarte() {
+    final etat = _etat;
+    // Ce n'est pas le tour du joueur : la pose n'est pas permise.
+    if (etat == null || etat.suivant != _monSiege) return;
+    // Le tour a déjà été joué : on ignore (double-tap).
+    if (etat.nbCoups <= _coupsJeus) return;
+    _coupsJeus = etat.nbCoups;
     widget.client.poserCarte();
   }
 

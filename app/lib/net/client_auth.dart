@@ -44,6 +44,16 @@ class ClientAuth {
       : _config = config ?? ConfigurationReseau.depuisDefines(),
         _http = httpClient ?? http.Client();
 
+  /// Santé du service d'authentification.
+  ///
+  /// Appelée au démarrage de l'app pour vérifier que **les deux** services
+  /// répondent avant d'annoncer « ONLINE » : `/api/jeu/config` peut répondre
+  /// alors que l'authentification est cassée — et sans compte, aucune table
+  /// ne peut être créée. L'indicateur « ONLINE » serait alors un mensonge.
+  Future<Map<String, dynamic>> sante() async {
+    return _envoyer(_config.urlAuth('/sante'), null);
+  }
+
   /// Crée (ou retrouve) un compte invité.
   ///
   /// L'appel est **idempotent** par `uuid_appareil` : un même appareil
@@ -78,6 +88,22 @@ class ClientAuth {
       methode: 'POST',
     );
     return _sessionDepuisReponse(reponse);
+  }
+
+  /// Change le pseudo du joueur connecté.
+  ///
+  /// Le serveur peut proposer une variante si le pseudo demandé est déjà
+  /// pris : la réponse fait alors foi (le pseudo réellement enregistré).
+  Future<Map<String, dynamic>> changerPseudo(
+    String jetonAcces,
+    String pseudo,
+  ) async {
+    return _envoyer(
+      _config.urlAuth('/profil'),
+      jsonEncode({'pseudo': pseudo}),
+      jeton: jetonAcces,
+      methode: 'PATCH',
+    );
   }
 
   /// Lecture du profil (utile pour vérifier que le jeton est encore valide).
@@ -134,6 +160,8 @@ class ClientAuth {
       switch (methode) {
         case 'POST':
           reponse = await _http.post(uri, headers: entetes, body: corps);
+        case 'PATCH':
+          reponse = await _http.patch(uri, headers: entetes, body: corps);
         case 'DELETE':
           reponse = await _http.delete(uri, headers: entetes, body: corps);
         default:

@@ -25,6 +25,25 @@ class _EcranCompteState extends State<EcranCompte> {
   bool _suppressionEnCours = false;
   String? _message;
 
+  /// Champ de saisie du nouveau pseudo.
+  final _ctrlPseudo = TextEditingController();
+
+  /// Le changement de pseudo est-il en cours ?
+  bool _changementEnCours = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // On propose le pseudo courant : le joueur n'a plus qu'à le corriger.
+    _ctrlPseudo.text = widget.session.session?.pseudo ?? '';
+  }
+
+  @override
+  void dispose() {
+    _ctrlPseudo.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = widget.session.session;
@@ -55,6 +74,8 @@ class _EcranCompteState extends State<EcranCompte> {
                   _bloc('Joueur', session?.pseudo ?? '—'),
                   _bloc('Identifiant technique',
                       'Généré par l\'app, jamais transmis à un service tiers.'),
+                  const SizedBox(height: 18),
+                  _champPseudo(),
                   const SizedBox(height: 22),
                   if (_message != null) ...[
                     Text(
@@ -116,6 +137,138 @@ class _EcranCompteState extends State<EcranCompte> {
         ],
       ),
     );
+  }
+
+  /// Champ de changement de pseudo.
+  ///
+  /// Le pseudo est ce qui distingue les joueurs sur le tapis : deux joueurs
+  /// de même pseudo ne peuvent pas jouer ensemble (le moteur exige des
+  /// pseudos uniques dans une table). C'est donc **la** action utile de cet
+  /// écran pour le multijoueur.
+  Widget _champPseudo() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.25),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'PSEUDO',
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _ctrlPseudo,
+                maxLength: 20,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+                decoration: InputDecoration(
+                  counterText: '',
+                  filled: true,
+                  fillColor: Colors.black.withValues(alpha: 0.3),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Colors.white24),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Colors.white24),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF80CBC4),
+                      width: 2,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 44,
+                child: ElevatedButton.icon(
+                  onPressed: _changementEnCours ? null : _changerPseudo,
+                  icon: _changementEnCours
+                      ? const SizedBox(
+                          height: 14,
+                          width: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFF071F18),
+                          ),
+                        )
+                      : const Icon(Icons.check, size: 18),
+                  label: Text(
+                    _changementEnCours ? 'ENREGISTREMENT…' : 'VALIDER',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF80CBC4),
+                    foregroundColor: const Color(0xFF071F18),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Enregistre le nouveau pseudo.
+  Future<void> _changerPseudo() async {
+    if (_changementEnCours) return;
+    final nouveau = _ctrlPseudo.text.trim();
+    if (nouveau.isEmpty) {
+      setState(() => _message = 'Le pseudo ne peut pas être vide.');
+      return;
+    }
+    setState(() {
+      _changementEnCours = true;
+      _message = null;
+    });
+    try {
+      final enregistre = await widget.session.changerPseudo(nouveau);
+      if (!mounted) return;
+      setState(() {
+        _changementEnCours = false;
+        _ctrlPseudo.text = enregistre;
+        _message = enregistre == nouveau
+            ? 'Pseudo enregistré.'
+            : 'Pseudo déjà pris : « $enregistre » a été retenu.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _changementEnCours = false;
+        _message = 'Changement impossible : $e';
+      });
+    }
   }
 
   Widget _boutonSupprimer() {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../moteur/partie_locale.dart';
+import '../net/client_auth.dart';
 import '../net/client_jeu.dart';
 import '../net/config_reseau.dart';
 import '../net/client_jeu_rest.dart';
@@ -49,6 +50,12 @@ class _EcranAccueilState extends State<EcranAccueil> {
   /// Client REST de jeu (tables, configuration).
   late final ClientJeuRest _rest = ClientJeuRest(config: _config);
 
+  /// Client REST d'authentification (santé du service).
+  ///
+  /// Celui du session en crée un autre ; celui-ci sert à vérifier que
+  /// l'authentification répond **avant** d'annoncer « ONLINE ».
+  late final ClientAuth _auth = ClientAuth(config: _config);
+
   /// Le multijoueur en ligne est-il disponible ?
   bool _enLigneDisponible = false;
 
@@ -73,6 +80,7 @@ class _EcranAccueilState extends State<EcranAccueil> {
     _ctrlNomAdversaire.dispose();
     _ctrlCodeTable.dispose();
     _rest.close();
+    _auth.close();
     super.dispose();
   }
 
@@ -80,19 +88,44 @@ class _EcranAccueilState extends State<EcranAccueil> {
   ///
   /// L'app **ne bloque jamais** le jeu hors-ligne : si le serveur est
   /// injoignable, le mode duel contre la machine reste utilisable.
-  Future<void> _testerServeur() async {
+  ///
+  /// On interroge **les deux services** (`corsian-auth` et `corsian-jeu`) :
+  /// `/api/jeu/config` peut répondre alors que l'authentification est
+  /// cassée — et dans ce cas, aucune table ne peut être créée, donc le
+  /// multijoueur est mort malgré l'indicateur « ONLINE ». C'est ce qui
+  /// rendait le diagnostic trompeur.
+  ///
+  /// En cas d'échec, on **réessaie** : un serveur lent (redémarrage, base
+  /// en cours de migration) ne doit pas figer l'app sur « OFFLINE » pour
+  /// toute la session.
+  Future<void> _testerServeur({int tentatives = 3}) async {
+    for (var essai = 0; essai < tentatives; essai++) {
+      if (await _serveurJoignable()) return;
+      if (essai + 1 < tentatives) {
+        await Future<void>.delayed(const Duration(seconds: 2));
+      }
+    }
+    if (mounted) setState(() => _enLigneDisponible = false);
+  }
+
+  /// Le multijoueur est-il réellement disponible ?
+  ///
+  /// Les deux services doivent répondre : le jeu (réglages) et l'auth
+  /// (compte joueur). C'est cette dernière qui manque le plus souvent —
+  /// et sans elle, « ONLINE » serait un mensonge.
+  Future<bool> _serveurJoignable() async {
     try {
       await _rest.config();
-      final existante = await _session.sessionPersistee();
-      if (!mounted) return;
+      await _auth.sante();
+      if (!mounted) return false;
+      // La session persistée est relue au démarrage : l'écran Compte peut
+      // ainsi afficher le pseudo du joueur, et l'app sait qu'il est connu
+      // sans créer de compte pour quelqu'un qui ne jouera qu'en local.
+      await _session.sessionPersistee();
       setState(() => _enLigneDisponible = true);
-      if (existante == null) {
-        // On ne crée le compte invité qu'au premier besoin : inutile de
-        // solliciter le serveur pour quelqu'un qui ne jouera qu'en local.
-      }
+      return true;
     } on ErreurReseau {
-      if (!mounted) return;
-      setState(() => _enLigneDisponible = false);
+      return false;
     }
   }
 
@@ -159,7 +192,13 @@ class _EcranAccueilState extends State<EcranAccueil> {
   Future<void> _ouvrirTable(String code, {String? urlPartage}) async {
     final jeton = await _jeton();
     if (jeton == null) return;
-    final client = ClientJeu(config: _config);
+    // Le client redemande un jeton valide à chaque ouverture de socket :
+    // c'est ce qui permet de se reconnecter en cours de partie alors que le
+    // jeton d'accès a expiré (15 min de durée de vie).
+    final client = ClientJeu(
+      config: _config,
+      rafraichirJeton: _session.jetonValide,
+    );
     try {
       await client.ouvrir(jeton: jeton, codeTable: code);
     } on ErreurReseau catch (e) {

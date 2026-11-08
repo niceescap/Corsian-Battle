@@ -172,13 +172,13 @@ Future<PartieFinie?> _jouer(ClientJeu client, Stream<PartieFinie> fin) async {
     }
   }));
 
-  souscriptions.add(client.cartes.listen((CartePosee posee) {
-    if (posee.suivant == monSiege) {
-      dernierSeq++;
-      Future<void>.delayed(Duration(milliseconds: 120 + alea.nextInt(200)))
-          .then((_) => client.poserCarte());
-    }
-  }));
+  // On joue **uniquement** sur l'instantané (`table_etat`), qui porte le
+  // tour (`suivant`) et le compteur de coups (`nb_coups`). Jouer aussi sur
+  // `carte_posee` poserait deux fois la même carte : les deux messages
+  // décrivent le même tour.
+  //
+  // Le serveur refuse la seconde pose (`coup_perime`), mais le client
+  // enverrait un message inutile et gaspillerait son quota de débit.
 
   souscriptions.add(client.doublons.listen((DoublonOuvert fenetre) async {
     final delai = 150 + alea.nextInt(300);

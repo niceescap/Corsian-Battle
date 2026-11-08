@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
+import 'package:meta/meta.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'config_reseau.dart';
@@ -136,7 +136,18 @@ class ClientJeu {
   /// La carte du dessus de ce client, si elle est connue.
   String? get maCarteConnue => _carte;
 
-  ClientJeu({ConfigurationReseau? config})
+  /// Renouvelle le jeton d'accès et renvoie le nouveau.
+  ///
+  /// Le jeton d'accès expire au bout de 15 minutes, alors qu'une partie
+  /// peut durer 30. Sans renouvellement, la **reconnexion** après une coupure
+  /// (coupure réseau, téléphone en veille) rouvre la socket avec un jeton
+  /// périmé : le serveur répond `4401` et la partie est perdue pour de bon.
+  ///
+  /// Ce callback est fourni par l'appelant — le client n'a pas à connaître
+  /// la session : il demande un jeton valide, il ne gère pas les comptes.
+  final Future<String?> Function()? rafraichirJeton;
+
+  ClientJeu({ConfigurationReseau? config, this.rafraichirJeton})
       : _config = config ?? ConfigurationReseau.depuisDefines();
 
   /// Flux des instantanés, **multi-abonnement**, avec rejeu de l'état courant.
@@ -207,9 +218,15 @@ class ClientJeu {
   int _versionProto = 1;
 
   Future<void> _ouvrirSocket() async {
-    final jeton = _jeton;
     final codeTable = _codeTable;
-    if (jeton == null || codeTable == null) return;
+    if (codeTable == null) return;
+
+    // Le jeton est validé **au moment** de l'ouverture : entre la première
+    // connexion et une reconnexion, il a pu expirer.
+    var jeton = _jeton;
+    if (jeton == null) return;
+    jeton = await _jetonValide(jeton);
+
     final uri = Uri.parse(_config.urlWebSocket);
     final canal = WebSocketChannel.connect(uri);
     _canal = canal;
@@ -341,6 +358,27 @@ class ClientJeu {
   // ------------------------------------------------------------------ //
   // Interne
   // ------------------------------------------------------------------ //
+  /// Renvoie un jeton d'accès valide, en le renouvelant si nécessaire.
+  ///
+  /// En cas d'échec du renouvellement, on renvoie le jeton d'origine : la
+  /// tentative de connexion aura lieu, et le serveur répondra `4401` si le
+  /// jeton est vraiment périmé. Mieux vaut une tentative qui échoue qu'une
+  /// reconnexion impossible.
+  Future<String> _jetonValide(String jeton) async {
+    final rafraichir = rafraichirJeton;
+    if (rafraichir == null) return jeton;
+    try {
+      final nouveau = await rafraichir();
+      if (nouveau != null && nouveau.isNotEmpty) {
+        _jeton = nouveau;
+        return nouveau;
+      }
+    } catch (_) {
+      // Renouvellement impossible : on tente quand même.
+    }
+    return jeton;
+  }
+
   void _envoyer(Map<String, dynamic> message) {
     final canal = _canal;
     if (canal == null) return;
