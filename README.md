@@ -75,14 +75,38 @@ Deux services FastAPI derrière nginx (443 est le seul point d'entrée public) :
 bash serveur/lancer_local.sh     # les deux services en premier plan
 ```
 
+### Déploiement
+
+Les units systemd et les fichiers d'environnement sont **versionnés** :
+
+```
+serveur/systemd/          corsian-auth, corsian-jeu, sauvegarde quotidienne
+serveur/deployer.sh       installation complète + recette
+serveur/sauvegarder.sh    VACUUM INTO quotidien, purge à 7 jours
+```
+
+Sur la machine de production :
+
+```bash
+sudo bash serveur/deployer.sh          # installe, démarre, vérifie
+bash serveur/deployer.sh --verifier    # recette seule
+```
+
+Le script génère la clé de signature **une seule fois** (la régénérer
+invaliderait tous les jetons émis) et la conserve hors du dépôt.
+
 ## Build de l'APK
 
 L'arbre `android/` est versionné. GitHub Actions construit et publie les
-binaires à chaque push sur `app/**` :
+binaires :
 
 - `.github/workflows/build-apk.yml` — analyse statique + tests bloquants,
   puis `flutter build apk --debug` (recette) **et** `flutter build apk
   --release` + `flutter build appbundle --release` (55 Mo, format Play).
+- **Un seul build par vague de commits** : la CI se déclenche sur
+  `pull_request` vers `main`, sur `push` sur `main`, sur un tag `v*` ou
+  manuellement — plus sur chaque branche de travail, qui produisait quatre
+  APK identiques. `concurrency` annule aussi les builds intermédiaires.
 - L'artefact `apk-debug` est toujours produit. L'artefact `release-signe`
   (APK + AAB + empreintes SHA-256) n'est produit **que si** les secrets de
   signature du dépôt sont présents ; sinon la CI émet un avertissement et ne

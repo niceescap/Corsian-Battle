@@ -114,6 +114,26 @@ chmod 600 ~/corsian-battle/var/cles/auth-rs256.pem
 
 ## 4. Units systemd
 
+> ✅ **Les units sont maintenant dans le dépôt**, sous `serveur/systemd/`.
+> Avant, ils n'étaient décrits que dans ce document — donc **jamais
+> installés** : le serveur ne démarrait pas, nginx renvoyait `502`, et l'app
+> affichait « OFFLINE ».
+>
+> L'installation se fait en une commande :
+>
+> ```bash
+> sudo bash serveur/deployer.sh          # installe, démarre, vérifie
+> bash serveur/deployer.sh --verifier    # recette seule, sans sudo
+> ```
+>
+> `deployer.sh` copie le code, crée le venv, installe les dépendances,
+> **génère la clé de signature si elle n'existe pas** (une seule fois : la
+> régénérer invaliderait tous les jetons émis), écrit les fichiers
+> d'environnement, installe les units et lance la recette.
+>
+> Les modèles ci-dessous sont ceux de `serveur/systemd/` — ils sont la
+> référence ; `deployer.sh` les copie dans `/etc/systemd/system/`.
+
 `/etc/systemd/system/corsian-auth.service`
 
 ```ini
@@ -219,6 +239,9 @@ Le vhost comporte déjà des avertissements bénins (valeurs `TLSv1.2` dupliqué
 en double) : `nginx -t` doit rester à `successful`, les `[warn]` ne sont pas bloquants.
 
 ## 6. Mise en service et recette
+
+> 🚀 **Raccourci** : `sudo bash serveur/deployer.sh` fait les étapes 1 à 9
+> d'un coup, puis affiche le résultat de la recette.
 
 | Étape | Commande | Attendu |
 |---|---|---|
@@ -342,6 +365,32 @@ migration a été appliquée (les migrations ne sont pas réversibles automatiqu
 | ~~Build actuel en `--debug`~~ | **Résolu** : la CI construit l'APK **et** l'AAB en `--release` (55 Mo). Ils ne sont publiés en artefact `release-signe` que si les secrets de signature existent |
 | ~~Pas de `release`/`tag` dans le workflow~~ | **Résolu** : un tag `v*` déclenche une **release GitHub** avec l'APK et l'AAB signés + empreintes SHA-256 (§7.1) |
 | Aucun macOS disponible | Pas de build iOS, donc pas de TestFlight tant qu'un accès Mac n'existe pas |
+| ~~Un build par branche~~ | **Résolu** : la CI ne se déclenche que sur `pull_request` vers `main`, sur `push` sur `main`, sur un tag `v*` ou manuellement. `concurrency` annule les builds intermédiaires d'une même vague : **un seul build par vague de commits**, au lieu de quatre (une par branche) |
+
+### 9.1 Pourquoi un seul build
+
+La CI se déclenchait sur `push` vers `main`, `feat/**`, `docs/**` et `fix/**`.
+Quatre branches du même travail ⇒ **quatre APK identiques**, quatre fois le
+même upload, quatre fois le même temps machine.
+
+Le code de l'app ne change pas d'une branche à l'autre tant que la PR n'est
+pas mergée : le build utile est celui de la **PR** (`pull_request` vers
+`main`) puis celui de `main`. D'où :
+
+| Déclencheur | Build | Pourquoi |
+|---|---|---|
+| `pull_request` → `main` | 1 | l'artefact à tester **avant** merge |
+| `push` → `main` | 1 | l'artefact de référence |
+| tag `v*` | 1 | version signée + release GitHub |
+| `workflow_dispatch` | 1 | à la main |
+
+Et `concurrency: {group: build-apk-${{ github.ref }}, cancel-in-progress:
+true}` : pousser trois commits d'affilée n'en déclenche qu'**un** — les
+builds intermédiaires sont annulés, ils sont inutilisables.
+
+> ⚠️ **Les branches obsolètes doivent être supprimées** après le merge.
+> Tant qu'elles existent, elles restent des sources de confusion — et
+> `git push` sur chacune relancerait la CI.
 
 ## 10. Points bloquants — état
 

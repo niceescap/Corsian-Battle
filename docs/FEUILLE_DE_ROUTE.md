@@ -4,7 +4,19 @@
 > d'une décision prise à l'étape suivante.
 >
 > **État actuel : S0 et S1 faits, S2 et S3 côté serveur, S2 côté client livrée, CI de
-> publication en place.**
+> publication en place — et le multijoueur réel débloqué (3 verrous levés).**
+>
+> > 🔓 **Les trois verrous qui empêchaient deux joueurs de faire une vraie
+> > partie depuis l'app ont été levés** : le `pret` envoyé par l'écran de jeu
+> > (trop tard), l'absence d'instantané pendant la partie (personne ne
+> > savait son tour), et l'état `en_jeu` jamais transmis (la table restait
+> > bloquée en salle d'attente). Voir `PR_GENERALE.md` et
+> > `serveur/tests/test_multijoueur_libre.py`.
+>
+> > 🔓 **Le déploiement est enfin dans le dépôt** (`serveur/systemd/`,
+> > `serveur/deployer.sh`). Avant, les units n'étaient décrites que dans la
+> > doc : jamais installées, donc le serveur ne tournait pas et l'app
+> > affichait « OFFLINE ».
 >
 > - **S0** : nginx posé (les trois blocs `location`), racine statique vérifiée, domaine tranché
 >   (`soft.opik.net/corsian-battle/` en V1), budget mémoire encore à confirmer.

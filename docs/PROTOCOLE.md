@@ -78,10 +78,21 @@ attente ──(tous les sièges prêts)──► compte_a_rebours ──(3 s)─
 
 | État | Ce qui se passe |
 |---|---|
-| `attente` | Les sièges se remplissent ; chaque arrivant envoie `pret` ; le créateur peut lancer dès que 2 sièges au moins sont occupés et prêts |
+| `attente` | Les sièges se remplissent ; chaque arrivant envoie `pret` **dès qu'il voit la table** ; la partie démarre dès que 2 sièges au moins sont occupés et prêts |
 | `compte_a_rebours` | 3 s, annulé si un joueur se déconnecte |
 | `en_jeu` | Distribution faite par le serveur, boucle de coups |
 | `terminee` | `partie_finie` émis, la table reste ouverte 30 s pour l'affichage du bilan puis est fermée |
+
+> ⚠️ **Le `pret` vient de la SALLE D'ATTENTE, jamais de l'écran de jeu.**
+> L'écran de jeu n'est atteint qu'**après** le lancement : un `pret` envoyé
+> depuis là-bas n'arriverait jamais, et la table resterait bloquée en
+> `attente` — sans aucun message d'erreur.
+
+> ⚠️ **Le passage à `en_jeu` passe par un `table_etat`.** C'est le seul
+> message qui porte `etat: "en_jeu"` ; `partie_lancee` et
+> `compte_a_rebours` ne le portent pas. L'écran d'attente navigue vers
+> l'écran de jeu sur ce champ : sans cet instantané au lancement, le
+> joueur reste dans la salle d'attente.
 
 **Code de table** : 6 caractères, alphabet sans ambiguïté `23456789ABCDEFGHJKLMNPQRSTUVWXYZ`
 (sans `0/O`, `1/I`), tiré au sort, valable 2 h, réutilisable après fermeture. Il s'énonce
@@ -113,7 +124,7 @@ native, fonctionne dès S2.
 | `type` | Contenu public | Destiné à |
 |---|---|---|
 | `bienvenue` | `table`, `siege`, `seq_courant` | le client qui se connecte |
-| `table_etat` | instantané complet filtré (§6) | un client (reconnexion) ou tous |
+| `table_etat` | instantané complet filtré (§6) | un client (reconnexion), ou **un siège par coup** |
 | `joueur_rejoint` | `siege`, `pseudo`, `est_bot` | tous |
 | `joueur_pret` | `siege` | tous |
 | `joueur_parti` | `siege`, `remplace_par_bot` | tous |
@@ -162,6 +173,17 @@ partie nulle, conformément à l'UX déjà en place).
 Règle : **chaque champ privé n'apparaît que dans la copie destinée à son propriétaire.**
 `ma_carte` n'est présent que pour le siège concerné. Le pli est public ; les tas adverses ne
 le sont que par leur **taille**.
+
+**Fréquence.** Un instantané est envoyé :
+- à l'ouverture de la socket (état de la table) ;
+- au **lancement** de la partie (état `en_jeu`) ;
+- **après chaque coup**, à chaque siège séparément.
+
+Le troisième point est ce qui permet au client de savoir que c'est son tour
+(`suivant`) : sans lui, l'app n'affiche jamais « à toi de jouer » et le coup
+ne peut pas être joué. L'instantané est donc **filtré par siège** — un
+instantané unique diffusé à tous donnerait la carte du dessus de chacun à
+tout le monde.
 
 > **`ma_carte` est dans l'objet du siège, pas à la racine de l'instantané.** Le lire à la racine
 > (un `json['ma_carte']` sur le dict de l'instantané) revient à ne jamais recevoir sa propre

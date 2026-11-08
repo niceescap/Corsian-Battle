@@ -73,6 +73,12 @@ Réponse `200` :
 Erreurs : `422 pseudo_refuse` (filtre UGC), `409 pseudo_indisponible`, `429 trop_de_comptes`
 (limite par IP et par appareil).
 
+**Variante proposée.** Si le pseudo demandé est déjà pris, le serveur en
+propose une **variante libre** (`YOU2`, `YOU3`…) au lieu de refuser le
+compte. C'est indispensable en multijoueur : deux joueurs qui installent
+l'app pour la première fois ont le même pseudo par défaut. La variante est
+renvoyée dans `joueur.pseudo`.
+
 La limite de création ne compte **que les vraies créations** : un appel
 idempotent (même `uuid_appareil`, donc redémarrage de l'app) ne consomme pas
 le quota. La limite par IP est de 20/h — assez large pour un Wi-Fi partagé
@@ -121,7 +127,20 @@ vol). `401 refresh_invalide`.
 { "pseudo": "Nina2" }
 ```
 → `200` avec le profil à jour. Mêmes filtres qu'à la création ; `409 pseudo_indisponible`.
-Limite : 3 changements / 24 h (évite l'usurpation de pseudo après un signalement).
+Limite : 3 changements / 24 h / IP (évite l'usurpation de pseudo après un signalement).
+
+> ✅ **Implémenté** (c'était décrit ici mais absent du serveur — sans lui, un
+> joueur gardait le pseudo tapé à la première installation, souvent `YOU`,
+> identique à celui des autres : le moteur, qui exige des pseudos uniques
+> dans une table, refusait la partie).
+
+**Variante proposée.** Si le pseudo demandé est déjà pris, le serveur ne
+refuse pas sèchement : il propose une **variante libre** (`Nina2`, `Nina3`…)
+et répond `200` avec le pseudo **réellement enregistré**. Un refus sans
+alternative est un cul-de-sac pour le joueur — et en multijoueur, deux
+joueurs qui installent l'app pour la première fois ont forcément le même
+pseudo. La variante respecte le filtre de modération : elle ne contourne
+aucune règle.
 
 ### 3.8 `POST /api/auth/email` *(jeton requis)* — rattachement
 
