@@ -1,8 +1,19 @@
 name: Build APK
 
+# La CI ne se déclenche QUE sur `main` et sur les pull requests visant `main`.
+#
+# Pourquoi : déclencher sur `feat/**`, `docs/**` et `fix/**` produisait un
+# build **par branche** — quatre branches du même travail, quatre APK
+# identiques, quatre fois le même upload. Le code de l'app ne change pas
+# d'une branche à l'autre tant que la PR n'est pas mergée : construire
+# avant le merge ne sert à rien, et l'artevent utile est celui de la PR
+# (il permet de tester l'APK avant merge) puis celui de `main` (l'artefact
+# de référence).
+#
+# Le déclenchement manuel (`workflow_dispatch`) reste possible.
 on:
   push:
-    branches: [main, feat/**, docs/**, fix/**]
+    branches: [main]
     paths:
       - 'app/**'
       - '.github/workflows/build-apk.yml'
@@ -14,6 +25,14 @@ on:
       - 'app/**'
       - '.github/workflows/build-apk.yml'
   workflow_dispatch:
+
+# Un seul build par *lot* de commits, pas par branche.
+# `concurrency` annule les runs précédents du même groupe : quand on pousse
+# plusieurs commits d'affilée sur la même branche, seul le dernier build
+# survit : les builds intermédiaires n'ont aucun intérêt.
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   FLUTTER_VERSION: '3.44.6'
