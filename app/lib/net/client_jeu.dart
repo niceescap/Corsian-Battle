@@ -27,6 +27,8 @@ class ClientJeu {
   /// Code de fermeture reçu, s'il y en a eu un.
   int? codeFermeture;
 
+  final List<String> _dernieresTramesRecues = <String>[];
+
   /// Le socket est-il ouvert ?
   bool get connecte => _canal != null;
 
@@ -394,6 +396,27 @@ class ClientJeu {
   }
 
   void _surMessage(dynamic brut) {
+    final brutTexte = '$brut';
+    final tailleOctets = brut is String
+        ? utf8.encode(brut).length
+        : brut is List<int>
+            ? brut.length
+            : utf8.encode(brutTexte).length;
+    var typeTrame = 'inconnu';
+    try {
+      final predecodage = jsonDecode(brutTexte);
+      if (predecodage is Map && predecodage['type'] is String) {
+        typeTrame = predecodage['type'] as String;
+      }
+    } catch (_) {
+      // La trame reste tracée comme inconnue; le décodage métier suit son chemin habituel.
+    }
+    tracer('Trame reçue : type=$typeTrame, taille=$tailleOctets');
+    _dernieresTramesRecues.add('$typeTrame ($tailleOctets octets)');
+    if (_dernieresTramesRecues.length > 5) {
+      _dernieresTramesRecues.removeAt(0);
+    }
+
     Map<String, dynamic> message;
     try {
       message = jsonDecode('$brut') as Map<String, dynamic>;
@@ -479,6 +502,11 @@ class ClientJeu {
     final code = _canal?.closeCode;
     final raison = _canal?.closeReason;
     codeFermeture = code;
+    tracer(
+      'Fermeture code=${code ?? 'inconnu'}, '
+      'raison=${raison ?? 'inconnue'}, '
+      'dernières trames : ${_dernieresTramesRecues.join(', ')}',
+    );
     tracer(
       'WebSocket fermée pour la table ${_codeTable ?? 'inconnue'} : '
       'code=${code ?? 'inconnu'}'
