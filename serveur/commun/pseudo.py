@@ -166,3 +166,36 @@ def valider(brut: object) -> Tuple[Optional[str], Optional[str]]:
 
 def message_erreur(code: Optional[str]) -> str:
     return MESSAGES.get(code or "", "Ce pseudo n'est pas accepté.")
+
+
+def variante_libre(base: str, deja_pris) -> Optional[str]:
+    """Propose un pseudo dérivé de [base] qui n'est pas encore pris.
+
+    Le multijoueur rend la collision **incontournable** : deux joueurs qui
+    installent l'app pour la première fois ont le même pseudo par défaut
+    (« YOU »), et le second se voit refuser son compte. Or un refus sec
+    (« ce pseudo est déjà pris ») est un cul-de-sac : le joueur ne sait pas
+    quoi saisir.
+
+    On propose donc `base2`, `base3`… jusqu'à trouver un créneau libre. Le
+    pseudo proposé reste **valide** au regard du filtre (longueur, caractères,
+    interdits), donc il ne contourne aucune règle de modération.
+
+    [deja_pris] reçoit la clé d'unicité (`pseudo_min`) et renvoie `True` si
+    elle est déjà occupée.
+
+    Le rendu final (casse, accents) est celui de [base] : « YOU » → « YOU2 ».
+    """
+    base = nettoyer(base) or "Joueur"
+    for suffixe in range(2, 100):
+        candidat = f"{base}{suffixe}"
+        if len(candidat) > LONGUEUR_MAX:
+            # Trop long : on tronque la base pour garder le suffixe, qui est
+            # ce qui rend le pseudo unique.
+            candidat = f"{base[: LONGUEUR_MAX - len(str(suffixe))]}{suffixe}"
+        code = valider(candidat)[1]
+        if code is not None:
+            continue
+        if not deja_pris(pseudo_min(candidat)):
+            return candidat
+    return None

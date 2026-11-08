@@ -136,6 +136,61 @@ def test_cle_uniq_neutralise_casse_et_accents():
     assert filtre.pseudo_min("Nina") != filtre.pseudo_min("Nino")
 
 
+def test_variante_libre_propose_un_pseudo_libre():
+    """En multijoueur, deux joueurs ont le même pseudo par défaut.
+
+    Le serveur doit donc proposer une **variante** au lieu de refuser
+    sèchement : un refus sans alternative est un cul-de-sac pour le joueur.
+    """
+    pris = set()
+
+    def deja_pris(cle):
+        return cle in pris
+
+    # Pseudo totalement libre : c'est le pseudo lui-même qui est renvoyé ?
+    # Non : la variante en propose toujours une dérivée, pour éviter une
+    # collision avec un joueur qui s'inscrirait entre-temps.
+    assert filtre.variante_libre("YOU", deja_pris) == "YOU2"
+
+    pris.add(filtre.pseudo_min("YOU2"))
+    assert filtre.variante_libre("YOU", deja_pris) == "YOU3"
+
+
+def test_variante_libre_respecte_le_filtre():
+    """La variante proposée doit être un pseudo **valide**.
+
+    Elle ne doit donc contourner ni la longueur maximale, ni la liste des
+    termes interdits : c'est la modération qui reste garantie.
+    """
+    # Pseudo de longueur maximale : la variante doit être tronquée pour
+    # garder le suffixe qui fait l'unicité.
+    variante = filtre.variante_libre("A" * 20, lambda cle: False)
+    assert variante is not None
+    assert len(variante) <= filtre.LONGUEUR_MAX
+    assert variante.endswith("2")
+
+    # Un pseudo interdit doit produire une variante *valide* : le filtre
+    # la rejette si elle reste interdite.
+    variante = filtre.variante_libre("con", lambda cle: False)
+    assert variante is not None
+    assert filtre.valider(variante)[1] is None, (
+        "la variante proposée doit être acceptée par le filtre"
+    )
+
+
+def test_variante_libre_accepte_une_casse_differente():
+    """La clé d'unicité neutralise casse et accents.
+
+    `Élodie` et `elodie` sont la même personne : la variante doit le voir.
+    """
+    def deja_pris(cle):
+        return cle == filtre.pseudo_min("Élodie")
+
+    variante = filtre.variante_libre("elodie", deja_pris)
+    assert variante is not None
+    assert variante != "elodie"
+
+
 def test_messages_derreur_tous_renseignes():
     for code in filtre.MESSAGES:
         assert filtre.message_erreur(code)

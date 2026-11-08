@@ -1,0 +1,12 @@
+# Déclenche la sauvegarde quotidienne à 04:20.
+
+[Unit]
+Description=Corsian-Battle — sauvegarde quotidienne (04:20)
+
+[Timer]
+OnCalendar=*-*-* 04:20:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

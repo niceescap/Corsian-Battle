@@ -56,6 +56,10 @@ _limiteurs: Dict[str, Limiteur] = {
     "invite": Limiteur(cfg.max_creations_compte_h, 3600),  # créations / h / IP
     "rafraichir": Limiteur(60, 3600),     # 60 / h / IP
     "lecture": Limiteur(120, 60),         # 120 / min / IP
+    # Changement de pseudo : 3 / 24 h / IP. Assez pour corriger une faute
+    # de frappe, trop peu pour squatter un pseudo après un signalement
+    # (`docs/ENDPOINTS.md` §3.7).
+    "profil": Limiteur(3, 86400),
 }
 
 
@@ -261,6 +265,10 @@ class JetonRequete(BaseModel):
     jeton_refresh: str = Field(min_length=10, max_length=200)
 
 
+class ProfilRequete(BaseModel):
+    pseudo: str = Field(min_length=1, max_length=40)
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -334,7 +342,20 @@ def invite(corps: InviteRequete, request: Request) -> JSONResponse:
                 # (ou une IP mobile partagée) sont bloqués injustement.
                 _limiter(request, "invite")
                 if bd.pseudo_min_pris(conn, filtre.pseudo_min(pseudo_propre)):
-                    raise ErreurApi("pseudo_indisponible", "Ce pseudo est déjà pris.", 409)
+                    # Le pseudo demandé est pris. Plutôt que de refuser
+                    # sèchement, on **propose une variante libre** : en
+                    # multijoueur, deux joueurs qui installent l'app pour la
+                    # première fois ont le même pseudo par défaut, et un refus
+                    # sans alternative est un cul-de-sac.
+                    variante = filtre.variante_libre(
+                        pseudo_propre,
+                        lambda cle: bd.pseudo_min_pris(conn, cle),
+                    )
+                    if variante is None:
+                        raise ErreurApi(
+                            "pseudo_indisponible", "Ce pseudo est déjà pris.", 409
+                        )
+                    pseudo_propre = variante
                 joueur_id = uuid.uuid4().hex
                 appareil_id = uuid.uuid4().hex
                 try:
@@ -440,6 +461,64 @@ def profil(
             },
             "appareils": appareils,
             "stats": stats,
+        }
+    )
+
+
+@app.patch("/api/auth/profil")
+def modifier_profil(
+    corps: ProfilRequete,
+    request: Request,
+    credits: Optional[HTTPAuthorizationCredentials] = Depends(porteur),
+) -> JSONResponse:
+    """Change le pseudo du joueur connecté.
+
+    Sans cette route, un joueur garde le pseudo qu'il a tapé à la première
+    installation — souvent le même que tous les autres (`YOU`). Or le
+    pseudo est ce qui distingue les joueurs **sur le tapis** : deux joueurs
+    de même pseudo sont même refusés par le moteur, qui exige des pseudos
+    uniques au sein d'une table.
+
+    Mêmes filtres qu'à la création : un pseudo refusé par la modération
+    n'est pas accepté ici non plus.
+    """
+    _limiter(request, "profil")
+    contenu = _authentifie(credits)
+    pseudo_propre, code = filtre.valider(corps.pseudo)
+    if code is not None or pseudo_propre is None:
+        raise ErreurApi(code or "pseudo_interdit", filtre.message_erreur(code), 422)
+
+    with bd.connexion(cfg.base_chemin) as conn:
+        joueur = bd.joueur_par_id(conn, contenu["sub"])
+        if joueur is None:
+            raise ErreurApi("compte_inconnu", "Compte introuvable.", 404)
+        cle = filtre.pseudo_min(pseudo_propre)
+        if cle != joueur.get("pseudo_min") and bd.pseudo_min_pris(conn, cle):
+            # Le pseudo demandé est pris : on propose une variante libre,
+            # comme à la création — un refus sans alternative est un
+            # cul-de-sac pour le joueur.
+            variante = filtre.variante_libre(
+                pseudo_propre, lambda c: bd.pseudo_min_pris(conn, c)
+            )
+            if variante is None:
+                raise ErreurApi("pseudo_indisponible", "Ce pseudo est déjà pris.", 409)
+            pseudo_propre = variante
+            cle = filtre.pseudo_min(pseudo_propre)
+        try:
+            bd.changer_pseudo(conn, joueur["id"], pseudo_propre, cle)
+        except bd.ErreurIntegrite:
+            raise ErreurApi("pseudo_indisponible", "Ce pseudo est déjà pris.", 409)
+        joueur = bd.joueur_par_id(conn, joueur["id"]) or joueur
+
+    return JSONResponse(
+        {
+            "joueur": {
+                "id": joueur["id"],
+                "pseudo": joueur["pseudo"],
+                "email": joueur.get("email"),
+                "cree_le": joueur.get("cree_le"),
+                "langue": joueur.get("langue", "fr"),
+            }
         }
     )
 

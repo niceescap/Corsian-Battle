@@ -463,6 +463,13 @@ async def _lancer_partie(table: Table) -> None:
     table.partie = partie
     await partie.lancer()
 
+    # L'instantané de lancement. SANS LUI, le client reste bloqué dans la
+    # salle d'attente : c'est le `table_etat` qui porte `etat: "en_jeu"`, et
+    # c'est sur ce champ que l'écran d'attente décide de basculer vers l'écran
+    # de jeu. Aucun autre message ne le porte — `partie_lancee` et
+    # `compte_a_rebours` ne disent pas l'état de la table.
+    await _instantane_par_siege(table, table.prochain_seq())
+
 
 async def _persister_partie(partie: PartieEnLigne, raison: str, gagnant_siege) -> None:
     """Écrit la partie terminée en base — E/S bloquante, donc dans un thread."""
@@ -736,9 +743,16 @@ async def _traiter(table: Table, siege: Siege, message: Dict[str, Any]) -> bool:
         return True
 
     if type_ == "resynchroniser":
+        # L'instantané doit porter l'état de la partie en cours (tour, pli,
+        # défi) : `table.instantane()` ne renvoie que l'état d'ATTENTE. Sans
+        # le complément, un client qui se resynchronise en pleine partie
+        # perd le tour et ne sait plus que c'est à lui de jouer.
+        complement = table.partie.etat_public() if table.partie is not None else {}
+        donnees = table.instantane(siege.numero)
+        donnees.update(complement)
         await _envoyer(
             siege.websocket,
-            {"type": "table_etat", "seq": table.prochain_seq(), "d": table.instantane(siege.numero)},
+            {"type": "table_etat", "seq": table.prochain_seq(), "d": donnees},
         )
         return True
 

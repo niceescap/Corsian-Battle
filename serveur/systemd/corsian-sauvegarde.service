@@ -1,0 +1,20 @@
+# Sauvegarde quotidienne de la base (VACUUM INTO), purge à 7 jours.
+#
+# Le service est déclenché par `corsian-sauvegarde.timer` (04:20).
+
+[Unit]
+Description=Corsian-Battle — sauvegarde de la base
+
+[Service]
+Type=oneshot
+User=nicee
+Group=nicee
+WorkingDirectory=/home/nicee/corsian-battle
+ExecStart=/home/nicee/corsian-battle/serveur/sauvegarder.sh
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/nicee/corsian-battle/var /home/nicee/corsian-battle/sauvegardes

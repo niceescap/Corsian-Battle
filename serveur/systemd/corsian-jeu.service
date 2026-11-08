@@ -1,0 +1,41 @@
+# Corsian-Battle — service d'jeu (8112).
+#
+# Installé sur la machine de production (`noe`), dans
+# `/etc/systemd/system/corsian-jeu.service`.
+#
+# Le dépôt ne contient QUE le modèle : l'unité réelle est copiée par
+# `serveur/deployer.sh`, qui y remplace le chemin de déploiement. Le chemin
+# ci-dessous est donc une valeur par défaut à ajuster.
+#
+# La clé privée de signature n'est PAS dans cette unité : elle est lue par
+# `corsian-auth` depuis `/etc/corsian/auth.env` (`CLE_PRIVEE`).
+
+[Unit]
+Description=Corsian-Battle — jeu (8112)
+After=network-online.target corsian-auth.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nicee
+Group=nicee
+WorkingDirectory=/home/nicee/corsian-battle
+EnvironmentFile=/etc/corsian/jeu.env
+ExecStart=/home/nicee/corsian-battle/.venv/bin/uvicorn serveur.jeu.main:app \
+          --host 127.0.0.1 --port 8112 --workers 1 \
+          --proxy-headers --forwarded-allow-ips 127.0.0.1 \
+          --no-access-log
+Restart=always
+RestartSec=3
+
+# Durcissement — ce service n'a besoin d'écrire que dans var/.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/nicee/corsian-battle/var /home/nicee/corsian-battle/sauvegardes
+MemoryMax=450M
+CPUQuota=60%
+
+[Install]
+WantedBy=multi-user.target

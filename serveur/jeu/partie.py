@@ -204,6 +204,35 @@ class PartieEnLigne:
         message.setdefault("seq", self.table.prochain_seq())
         await self.diffuser(self.table, message, vers)
 
+    async def publier_etats(self) -> None:
+        """Publie un `table_etat` **par siège**, après chaque coup.
+
+        Sans ce qui suit, le client ne connaît jamais le tour : `suivant`,
+        `pli`, `defi` et les tailles de tas n'arrivent qu'au `table_etat`
+        d'ouverture. Or l'écran de jeu s'appuie sur `etat.suivant` pour
+        afficher « à toi de jouer » et autoriser la pose de la carte. Sans
+        instantané, **aucun joueur ne sait que c'est son tour** : la partie
+        reste bloquée sur le premier tour, côté client.
+
+        Chaque siège reçoit SA copie (c'est `ma_carte` qui rend la copie
+        privée), donc on ne peut pas diffuser un instantané unique à tous :
+        on passe par le diffuseur avec `vers=[siege]` pour chacun.
+
+        `docs/PROTOCOLE.md` §6.
+        """
+        complement = self.etat_public()
+        for numero in self.par_index:
+            siege = self._siege(numero)
+            if siege.websocket is None:
+                continue
+            donnees = self.table.instantane(numero)
+            donnees.update(complement)
+            await self.diffuser(
+                self.table,
+                {"type": "table_etat", "seq": self.table.prochain_seq(), "d": donnees},
+                vers=[numero],
+            )
+
     def _traduire(self, valeur: Any) -> Any:
         """Index moteur → numéros de siège, récursivement.
 
@@ -511,6 +540,9 @@ class PartieEnLigne:
 
             self._maj_tailles()
             await self.annoncer_cartes()
+            # L'instantané **après** le coup : c'est lui qui dit à chaque
+            # joueur que c'est AUJOURD'HUI son tour.
+            await self.publier_etats()
             self.jeu.resolveur_tape = self.resolveur     # repli pour les coups suivants
 
             # 4) Suite

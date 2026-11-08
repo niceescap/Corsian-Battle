@@ -163,6 +163,21 @@ def pseudo_min_pris(conn: sqlite3.Connection, cle: str) -> bool:
     return ligne is not None
 
 
+def pseudo_min_equivalent(conn: sqlite3.Connection, cle: str) -> Optional[str]:
+    """Pseudo **réellement pris** qui correspond à cette clé d'unicité.
+
+    Sert à proposer un pseudo libre à l'utilisateur au lieu d'un refus sec :
+    `Jean-Pierre` et `jeanpierre` sont la même clé, le second joueur reçoit
+    donc une variante suffixée (`Jean-Pierre2`) au lieu d'un « déjà pris »
+    qui ne lui dit pas quoi faire.
+    """
+    ligne = conn.execute(
+        "SELECT pseudo FROM joueurs WHERE pseudo_min = ? AND statut != 'supprime'",
+        (cle,),
+    ).fetchone()
+    return ligne["pseudo"] if ligne else None
+
+
 def creer_joueur(
     conn: sqlite3.Connection,
     joueur_id: str,
@@ -176,6 +191,23 @@ def creer_joueur(
             "INSERT INTO joueurs(id, pseudo, pseudo_min, langue, statut) "
             "VALUES(?, ?, ?, ?, 'actif')",
             (joueur_id, pseudo, cle_uniq, langue),
+        )
+
+
+def changer_pseudo(
+    conn: sqlite3.Connection,
+    joueur_id: str,
+    pseudo: str,
+    cle_uniq: str,
+) -> None:
+    """Change le pseudo d'un joueur.
+
+    Lève `sqlite3.IntegrityError` si la clé d'unicité est déjà prise.
+    """
+    with conn:
+        conn.execute(
+            "UPDATE joueurs SET pseudo = ?, pseudo_min = ? WHERE id = ?",
+            (pseudo, cle_uniq, joueur_id),
         )
 
 

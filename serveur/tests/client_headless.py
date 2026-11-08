@@ -122,6 +122,12 @@ class Joueur:
         self.siege: Optional[int] = None
         self.pret = False
         self.dernier_seq_joue = -1
+        # Nombre de coups déjà joués : c'est le **compteur de tour** du
+        # serveur. Le client ne joue que si le tour a changé depuis son
+        # dernier coup — sans cela, `carte_posee` ET `table_etat` (émis
+        # tous les deux après chaque coup) déclencheraient deux poses pour
+        # le même tour.
+        self.dernier_nb_coups = -1
         self.coups_joues = 0
         self.tapes = 0
         self.ma_carte: Optional[str] = None
@@ -132,6 +138,27 @@ class Joueur:
     def log(self, texte: str) -> None:
         if self.verbeux:
             print(f"  [{self.pseudo:>10}] {texte}", flush=True)
+
+    def a_mon_tour(self, donnees: Dict[str, Any]) -> bool:
+        """Est-ce à ce joueur de poser, et le tour est-il nouveau ?
+
+        Le serveur publie un `table_etat` après **chaque** coup : c'est cet
+        instantané qui porte le tour (`suivant`) et le compteur de coups
+        (`nb_coups`). La garde sur `nb_coups` est ce qui empêche de poser
+        deux fois pour le même tour — c'est le rôle du compteur, pas du `seq`
+        (qui est global et non propre au tour).
+        """
+        if self.siege is None:
+            return False
+        if donnees.get("suivant") != self.siege:
+            return False
+        nb_coups = donnees.get("nb_coups")
+        if not isinstance(nb_coups, int):
+            return False
+        if nb_coups <= self.dernier_nb_coups:
+            return False
+        self.dernier_nb_coups = nb_coups
+        return True
 
     async def jouer(self, socket: Any) -> None:
         """Pose sa carte si c'est son tour. Une temporisation courte imite un
@@ -217,8 +244,7 @@ class Joueur:
                             self.pret = True
                             await socket.send(json.dumps({"type": "pret"}))
                             self.log("prêt")
-                        elif donnees.get("suivant") == self.siege and seq > self.dernier_seq_joue:
-                            self.dernier_seq_joue = seq
+                        elif self.a_mon_tour(donnees):
                             await self.jouer(socket)
 
                     elif type_ == "ta_carte_suivante":
@@ -226,9 +252,13 @@ class Joueur:
                         self.log(f"[privé] ma carte du dessus : {self.ma_carte}")
 
                     elif type_ == "carte_posee":
-                        if donnees.get("suivant") == self.siege and seq > self.dernier_seq_joue:
-                            self.dernier_seq_joue = seq
-                            await self.jouer(socket)
+                        # Volontairement **rien** ici : le tour se joue sur
+                        # `table_etat`, qui porte le compteur `nb_coups`.
+                        # Jouer aussi sur `carte_posee` poserait DEUX fois
+                        # la même carte (les deux messages décrivent le même
+                        # tour) : le serveur refuserait la seconde, mais le
+                        # client enverrait un message inutile.
+                        pass
 
                     elif type_ == "doublon_ouvert":
                         await self.taper(socket, int(donnees.get("fenetre_ms", 900)))
