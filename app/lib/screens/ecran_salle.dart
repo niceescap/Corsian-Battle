@@ -107,6 +107,7 @@ class _EcranSalleState extends State<EcranSalle> {
 
   @override
   void dispose() {
+    tracer('dispose EcranSalle');
     _abonnement?.cancel();
     super.dispose();
   }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../diagnostic.dart';
 import '../net/client_jeu.dart';
 import '../net/erreur_reseau.dart';
 import '../net/modeles_proto.dart';
@@ -98,6 +99,7 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
 
   @override
   void dispose() {
+    tracer('dispose EcranTableEnLigne');
     for (final abonnement in _abonnements) {
       abonnement.cancel();
     }

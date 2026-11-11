@@ -301,6 +301,8 @@ class ClientJeu {
 
   /// Ferme proprement la socket.
   Future<void> fermer() async {
+    final pile = StackTrace.current.toString().split('\n').take(3).join(' | ');
+    tracer('Fermeture demandée par l\'app | $pile');
     _reconnexionAutorisee = false;
     _minuteurReconnexion?.cancel();
     _minuteurReconnexion = null;
@@ -532,10 +534,21 @@ class ClientJeu {
   /// partie. Le serveur renvoie un instantané complet à la reconnexion.
   void _planifierReconnexion() {
     _minuteurReconnexion?.cancel();
-    if (!_reconnexionAutorisee || _jeton == null) return;
-    if (_fermeturesDefinitives.contains(codeFermeture)) return;
+    if (!_reconnexionAutorisee) {
+      tracer('Reconnexion NON programmée (fermeture voulue)');
+      return;
+    }
+    if (_jeton == null) {
+      tracer('Reconnexion NON programmée (jeton absent)');
+      return;
+    }
+    if (_fermeturesDefinitives.contains(codeFermeture)) {
+      tracer('Reconnexion NON programmée (code définitif $codeFermeture)');
+      return;
+    }
     _tentatives++;
     final secondes = (1 << (_tentatives - 1).clamp(0, 5)).clamp(1, 30);
+    tracer('Reconnexion programmée dans $secondes s');
     _minuteurReconnexion = Timer(Duration(seconds: secondes), () async {
       try {
         await _ouvrirSocket();
