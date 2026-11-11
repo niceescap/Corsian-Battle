@@ -123,6 +123,7 @@ class ClientJeu {
   /// Elle l'est, sauf si la fermeture est « définitive » : table introuvable
   /// ou complète, version de protocole incompatible.
   bool _reconnexionAutorisee = true;
+  Future<void>? _fermetureComplete;
 
   /// Le socket est-il actuellement ouvert ?
   bool _ouvert = false;
@@ -322,20 +323,54 @@ class ClientJeu {
   }
 
   /// Ferme tous les flux (à appeler quand l'écran disparaît).
-  Future<void> disposing() async {
-    await fermer();
-    await _etats.close();
-    await _cartes.close();
-    await _carteController.close();
-    await _doublons.close();
-    await _verdicts.close();
-    await _plis.close();
-    await _fins.close();
-    await _erreurs.close();
-    await _mouvements.close();
-    await _rebours.close();
-    await _fermetures.close();
-    await _reconnexions.close();
+  Future<void> disposing() {
+    final enCours = _fermetureComplete;
+    if (enCours != null) return enCours;
+    final fermeture = _disposing().onError<Object>((erreur, pile) {
+      tracer('Erreur disposing ClientJeu : $erreur | $pile');
+      throw erreur;
+    });
+    _fermetureComplete = fermeture;
+    return fermeture;
+  }
+
+  Future<void> _disposing() async {
+    Object? premiereErreur;
+    StackTrace? premierePile;
+    void conserverErreur(Object erreur, StackTrace pile) {
+      premiereErreur ??= erreur;
+      premierePile ??= pile;
+      tracer('Erreur fermeture ClientJeu : $erreur | $pile');
+    }
+
+    try {
+      await fermer();
+    } catch (erreur, pile) {
+      conserverErreur(erreur, pile);
+    }
+    for (final flux in <Future<dynamic>>[
+      _etats.close(),
+      _cartes.close(),
+      _carteController.close(),
+      _doublons.close(),
+      _verdicts.close(),
+      _plis.close(),
+      _fins.close(),
+      _erreurs.close(),
+      _mouvements.close(),
+      _rebours.close(),
+      _fermetures.close(),
+      _reconnexions.close(),
+    ]) {
+      try {
+        await flux;
+      } catch (erreur, pile) {
+        conserverErreur(erreur, pile);
+      }
+    }
+    if (premiereErreur != null) {
+      Error.throwWithStackTrace(premiereErreur!, premierePile ?? StackTrace.empty);
+    }
   }
 
   // ------------------------------------------------------------------ //

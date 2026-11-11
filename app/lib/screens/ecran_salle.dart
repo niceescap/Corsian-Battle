@@ -90,7 +90,6 @@ class _EcranSalleState extends State<EcranSalle> {
       // La table passe en jeu : on cède la place à l'écran de jeu.
       if (etat.etat == 'en_jeu' || etat.etat == 'compte_a_rebours') {
         if (!_basculeVersJeu) {
-          _basculeVersJeu = true;
           Navigator.of(context).pushReplacement(
             MaterialPageRoute<void>(
               builder: (_) => EcranTableEnLigne(
@@ -100,6 +99,7 @@ class _EcranSalleState extends State<EcranSalle> {
               ),
             ),
           );
+          _basculeVersJeu = true;
         }
       }
     });
@@ -109,6 +109,13 @@ class _EcranSalleState extends State<EcranSalle> {
   void dispose() {
     tracer('dispose EcranSalle');
     _abonnement?.cancel();
+    if (!_basculeVersJeu) {
+      unawaited(
+        widget.client.disposing().onError<Object>((erreur, pile) {
+          tracer('Erreur fermeture client depuis EcranSalle : $erreur | $pile');
+        }),
+      );
+    }
     super.dispose();
   }
 

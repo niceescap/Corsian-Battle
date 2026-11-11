@@ -104,6 +104,13 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
       abonnement.cancel();
     }
     _minuteurFenetre?.cancel();
+    unawaited(
+      widget.client.disposing().onError<Object>((erreur, pile) {
+        tracer(
+          'Erreur fermeture client depuis EcranTableEnLigne : $erreur | $pile',
+        );
+      }),
+    );
     super.dispose();
   }
 

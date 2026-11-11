@@ -246,8 +246,6 @@ class _EcranAccueilState extends State<EcranAccueil> {
         ),
       ),
     );
-    // L'écran a fermé la socket : on ne conserve rien.
-    await client.disposing();
   }
 
   String _nettoyer(TextEditingController ctrl, String repli) {
