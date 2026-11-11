@@ -38,7 +38,7 @@ from serveur.commun import bd
 from serveur.commun import jwt as jetons
 from serveur.commun.config import VERSION_PROTO, Config, config_jeu, verifier_production
 from serveur.commun.limites import Limiteur
-from serveur.jeu.partie import PartieEnLigne
+from serveur.jeu.partie import PartieEnLigne, journaliser_echec_tache
 from serveur.jeu.table import TAILLES, ErreurTable, GestionnaireTables, Siege, Table
 
 journal = logging.getLogger("corsian.jeu")
@@ -90,6 +90,7 @@ async def cycle_de_vie(app: FastAPI):
     bd.initialiser(cfg.base_chemin)          # idempotent : le jeu démarre seul
     _etat["verificateur"] = jetons.VerificateurJwks(cfg.url_jwks)
     tache = asyncio.create_task(_entretien_periodique())
+    tache.add_done_callback(journaliser_echec_tache)
     journal.info(
         "%s démarré · environnement=%s · ws=%s · jwks=%s · mode_sans_auth=%s",
         cfg.service, cfg.environnement, "/ws", cfg.url_jwks, cfg.mode_sans_auth,
@@ -241,7 +242,8 @@ async def _envoyer(websocket: WebSocket, message: Dict[str, Any]) -> bool:
     try:
         await websocket.send_text(json.dumps(message, ensure_ascii=False))
         return True
-    except Exception:
+    except Exception as exc:
+        journal.exception("_envoyer: envoi WebSocket en échec : %s", exc)
         return False
 
 
@@ -291,8 +293,8 @@ async def _instantane_par_siege(table: Table, seq: int) -> None:
 async def _fermer(websocket: WebSocket, code: int) -> None:
     try:
         await websocket.close(code=code)
-    except Exception:
-        pass
+    except Exception as exc:
+        journal.exception("_fermer: fermeture WebSocket en échec : %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -729,7 +731,8 @@ async def _recevoir(websocket: WebSocket, delai_s: float) -> Optional[str]:
         return None
     except WebSocketDisconnect:
         raise
-    except Exception:
+    except Exception as exc:
+        journal.exception("_recevoir: réception WebSocket en échec : %s", exc)
         return None
 
 

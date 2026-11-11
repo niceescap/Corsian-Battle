@@ -45,6 +45,15 @@ from serveur.jeu.table import Table
 
 journal = logging.getLogger("corsian.jeu.partie")
 
+
+def journaliser_echec_tache(tache):
+    if tache.cancelled():
+        return
+    exc = tache.exception()
+    if exc is not None:
+        journal.exception("Tâche en échec : %s", exc, exc_info=exc)
+
+
 MAX_COUPS = 200000          # garde-fou du moteur, aligné sur jouer_partie()
 DUREE_MAX_S = 1800          # 30 min : au-delà, partie nulle (PROTOCOLE §13)
 
@@ -596,6 +605,7 @@ class PartieEnLigne:
         except RuntimeError:
             return                       # hors boucle (test synchrone) : pas de minuteur
         self._minuteur = boucle.create_task(self._attente_tour())
+        self._minuteur.add_done_callback(journaliser_echec_tache)
 
     async def _attente_tour(self) -> None:
         delai_s = max(int(self.cfg.delai_tour_ms), 0) / 1000.0
