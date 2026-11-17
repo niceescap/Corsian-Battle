@@ -399,7 +399,7 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
     final taille = _tailleTable;
     if (taille == Size.zero) return;
 
-    final vitesse = venantDeMoi ? 1200 : 900 + _rng.nextDouble() * 1400;
+    final vitesse = venantDeMoi ? 1200.0 : 900 + _rng.nextDouble() * 1400;
     final centre = _rectTapis(taille).center;
     final arrivee = Offset(
       centre.dx + (_rng.nextDouble() - 0.5) * 70,
@@ -1074,7 +1074,7 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
               ],
             ),
             const SizedBox(width: 10),
-            const Transform.scale(
+            Transform.scale(
               scale: 0.95,
               child: CarteWidget(largeur: 22, hauteur: 31),
             ),
