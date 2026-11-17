@@ -1,13 +1,18 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 
 import '../diagnostic.dart';
+import '../modeles.dart';
 import '../net/client_jeu.dart';
 import '../net/erreur_reseau.dart';
 import '../net/modeles_proto.dart';
+import '../widgets/carte_volante.dart';
 import '../widgets/carte_widget.dart';
+import '../widgets/effet_pli.dart';
 import '../widgets/entete.dart';
+import '../widgets/fleche_joueur.dart';
 import '../widgets/tas_joueur.dart';
 
 /// Écran de la partie **en ligne**.
@@ -43,7 +48,48 @@ class EcranTableEnLigne extends StatefulWidget {
   State<EcranTableEnLigne> createState() => _EcranTableEnLigneState();
 }
 
-class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
+class _CarteCentre {
+  final String code;
+  final Offset position;
+  final double rotation;
+
+  const _CarteCentre({
+    required this.code,
+    required this.position,
+    required this.rotation,
+  });
+}
+
+class _LotRamasse {
+  final List<_CarteCentre> cartes;
+  final Offset arrivee;
+
+  const _LotRamasse({required this.cartes, required this.arrivee});
+}
+
+class _EvenementPli {
+  final int? vainqueur;
+  final int nombreCartes;
+  final String raison;
+
+  const _EvenementPli({
+    required this.vainqueur,
+    required this.nombreCartes,
+    required this.raison,
+  });
+}
+
+class _AnnonceCarte {
+  final int siege;
+  final String code;
+
+  const _AnnonceCarte({required this.siege, required this.code});
+}
+
+class _EcranTableEnLigneState extends State<EcranTableEnLigne>
+    with TickerProviderStateMixin {
+  final _rng = Random();
+
   /// Instantané courant de la table.
   EtatTable? _etat;
 
@@ -51,8 +97,22 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
   /// puis le rappelle dans chaque `table_etat` (`mon_siege`).
   int _monSiege = -1;
 
-  /// Cartes du pli, dans l'ordre de pose.
-  final List<String> _pli = [];
+  /// Cartes posées au centre, figées à leur point d'arrivée.
+  ///
+  /// C'est la source unique du rendu central et du ramassage. Toutes les
+  /// cartes reçues depuis le dernier pli attribué y restent jusqu'au
+  /// balayage, afin qu'aucune ne disparaisse avant le vainqueur.
+  final List<_CarteCentre> _centreVisible = [];
+
+  /// Cartes en vol entre un tas et le centre du tapis.
+  final List<Widget> _volantes = [];
+
+  /// Pose en attente d'une taille de table mesurée.
+  ///
+  /// Un `carte_posee` peut arriver avant le premier `LayoutBuilder` du
+  /// `Stack`. Sans ce report, le vol serait perdu et la carte n'apparaîtrait
+  /// qu'au prochain instantané serveur.
+  _AnnonceCarte? _annonceEnAttente;
 
   /// Le pli est-il en train d'être ramassé ?
   bool _feuDoublon = false;
@@ -63,15 +123,8 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
   /// L'app est-elle reconnectée ? (bandeau discret)
   bool _connecte = true;
 
-  /// Horodatage du début de la fenêtre de doublon (chronomètre local).
+  /// Horodatage du début de la fenêtre de doublon (mesure locale du délai).
   DateTime? _debutFenetre;
-
-  /// La carte du dessus de ce client (reçue par `ta_carte_suivante`).
-  ///
-  /// En ligne, le serveur **pré-annonce** la carte à son propriétaire : c'est
-  /// ce qui permet de choisir une strategy avant de lancer. Elle change à
-  /// chaque tour, d'où le flux plutôt qu'un simple champ.
-  String? _maCarte;
 
   /// Compte à rebours avant le lancement, en secondes.
   int? _rebours;
@@ -79,31 +132,73 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
   /// Message bref d'un mouvement de table (joueur parti, bot.take la main).
   String? _mouvement;
 
-  /// La carte annoncée par la fenêtre de doublon (`cartes[1]`).
-  ///
-  /// C'est elle qui doit déclencher l'animation ET le chronomètre
-  /// (`docs/PROTOCOLE.md` §10.1) : `doublon_ouvert` arrive **avant**
-  /// `carte_posee` pour la carte qui fait le doublon.
-  String? _carteDoublon;
+  /// Animation du balayage du pli vers son vainqueur.
+  late final AnimationController _ctrlRamasse;
+  _LotRamasse? _ramassage;
 
-  /// Le chronomètre de fin de fenêtre de doublon.
-  Timer? _minuteurFenetre;
+  /// Pulsation du geste « tape » pendant un doublon.
+  late final AnimationController _ctrlIndice;
+
+  /// Si le ramassage arrive avant la fin du vol de la carte déclencheuse.
+  bool _ramassageEnAttente = false;
+  _EvenementPli? _evenementEnAttente;
+
+  /// Effets de gain et de perte, identiques à la table 1v1.
+  Color? _flashCouleur;
+  double _flashOpacite = 0.4;
+  int _flashDuree = 360;
+  int _cleFlash = 0;
+  Timer? _timerFlash;
+
+  int? _popupNombre;
+  bool _popupGain = true;
+  IconData? _popupIcone;
+  int _clePopup = 0;
+  Timer? _timerPopup;
+
+  IconData? _banniereIcone;
+  Color _banniereCouleur = Colors.redAccent;
+  int _cleBanniere = 0;
+  Timer? _timerBanniere;
+
+  /// Toute perte déclenche une secousse du tapis.
+  int _compteurSecousses = 0;
+
+  /// Zone de jeu mesurée à chaque build : source de vérité du tapis et du vol.
+  Size _tailleTable = Size.zero;
 
   final List<StreamSubscription<dynamic>> _abonnements = [];
 
   @override
   void initState() {
     super.initState();
+
+    _ctrlRamasse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    )..addListener(() {
+      if (mounted) setState(() {});
+    });
+
+    _ctrlIndice = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+
     _ecouter();
   }
 
   @override
   void dispose() {
     tracer('dispose EcranTableEnLigne');
+    _timerFlash?.cancel();
+    _timerPopup?.cancel();
+    _timerBanniere?.cancel();
     for (final abonnement in _abonnements) {
       abonnement.cancel();
     }
-    _minuteurFenetre?.cancel();
+    _ctrlRamasse.dispose();
+    _ctrlIndice.dispose();
     unawaited(
       widget.client.disposing().onError<Object>((erreur, pile) {
         tracer(
@@ -125,30 +220,22 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
         _etat = etat;
         if (etat.monSiege >= 0) _monSiege = etat.monSiege;
         _erreur = null;
-        // Le `pret` a été envoyé par la SALLE D'ATTENTE, qui est le seul
-        // écran qui le pouvait : le serveur lance la partie quand tous les
-        // sièges sont prêts (`docs/PROTOCOLE.md` §4). Le renvoyer ici est
-        // inutile — et le serveur le refuse dès que la table est partie.
-        if (etat.pli.isNotEmpty) {
-          _pli
-            ..clear()
-            ..addAll(etat.pli);
-        }
       });
+      _repererDepuisEtat(etat);
     });
 
     ajouter(widget.client.cartes, (CartePosee posee) {
       if (!mounted) return;
-      setState(() {
-        // La carte annoncée par `doublon_ouvert` a déjà été animée : on ne
-        // la remet pas au pli pour éviter un doublon visuel.
-        if (!posee.annonce) {
-          _pli.add(posee.carte);
-        }
-        if (posee.suivant == _monSiege) {
-          // C'est à nous de jouer : rien à faire ici, l'UI indique « à toi ».
-        }
-      });
+      if (posee.annonce) return;
+      final annonce = _AnnonceCarte(
+        siege: posee.siege,
+        code: posee.carte,
+      );
+      if (_tailleTable == Size.zero) {
+        _annonceEnAttente = annonce;
+      } else {
+        _animerAnnonce(annonce);
+      }
     });
 
     ajouter(widget.client.rebours, (int secondes) {
@@ -180,48 +267,43 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
       });
     });
 
-    ajouter(widget.client.maCarte, (String carte) {
-      if (!mounted) return;
-      setState(() => _maCarte = carte);
-    });
-
     ajouter(widget.client.doublons, (DoublonOuvert fenetre) {
       if (!mounted) return;
+      // Une fenêtre précédente peut encore exister si son verdict a été
+      // perdu. Le serveur ne garde qu'un état de tape courant : on repart
+      // donc d'une fenêtre propre pour le nouveau coup.
+      _tapeEnvoyee = false;
       setState(() {
         _feuDoublon = true;
-        _tapeEnvoyee = false;
-        // `cartes[1]` est la carte du dessus du joueur dont c'est le tour :
-        // c'est elle que l'animation montre, et elle amorce le chronomètre.
-        _carteDoublon = fenetre.cartes.length > 1 ? fenetre.cartes[1] : null;
-        // Le chronomètre part AU RENDU de l'animation : c'est la mesure
-        // locale qui départage les joueurs, jamais une horloge murale
-        // (`docs/PROTOCOLE.md` §9).
+        // Le chronomètre part à l'annonce, comme à la table 1v1.
         _debutFenetre = DateTime.now();
+        final etat = _etat;
+        final siege = etat?.suivant;
+        final carte = fenetre.cartes.length > 1 ? fenetre.cartes[1] : null;
+        if (siege != null && carte != null && carte.isNotEmpty) {
+          final annonce = _AnnonceCarte(siege: siege, code: carte);
+          if (_tailleTable == Size.zero) {
+            _annonceEnAttente = annonce;
+          } else {
+            _animerAnnonce(annonce);
+          }
+        }
       });
-      _minuteurFenetre?.cancel();
-      _minuteurFenetre = Timer(
-        Duration(milliseconds: fenetre.fenetreMs),
-        () {
-          if (!mounted) return;
-          setState(() => _feuDoublon = false);
-        },
-      );
+      RetourTactile.doublon();
     });
 
     ajouter(widget.client.verdicts, (DoublonResolu _) {
       if (!mounted) return;
       setState(() {
         _feuDoublon = false;
-        _carteDoublon = null;
+        _debutFenetre = null;
+        _tapeEnvoyee = false;
       });
-      _minuteurFenetre?.cancel();
     });
 
-    ajouter(widget.client.plis, (PliGagne _) {
+    ajouter(widget.client.plis, (PliGagne pli) {
       if (!mounted) return;
-      // Le pli est retiré : le serveur le renvoie dans le prochain
-      // `table_etat`.
-      setState(() => _pli.clear());
+      _onPliRamasse(pli.gagnant, pli.nbCartes, pli.raison);
     });
 
     ajouter(widget.client.fins, (PartieFinie fin) {
@@ -264,21 +346,23 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
   // ------------------------------------------------------------------ //
   // Actions du joueur                                                  //
   // ------------------------------------------------------------------ //
-  /// Nombre de coups pour lesquels on a déjà posé.
+  /// Nombre de coups pour lesquels on a déjà envoyé une pose.
   ///
-  /// Le serveur refuse une seconde pose pour le même tour (`coup_perime`),
-  /// mais un double-tap afficherait un bandeau d'erreur incompréhensible pour
-  /// le joueur. On s'en garde donc ici : une pose par tour.
+  /// Le compteur suit les tours, pas le `seq` global : les trames privées
+  /// d'un autre siège font avancer ce dernier sans changer le tour.
   int _coupsJeus = -1;
 
-  void _poserCarte() {
+  bool _poserCarte() {
     final etat = _etat;
     // Ce n'est pas le tour du joueur : la pose n'est pas permise.
-    if (etat == null || etat.suivant != _monSiege) return;
+    if (etat == null || etat.suivant != _monSiege || _monSiege < 0) {
+      return false;
+    }
     // Le tour a déjà été joué : on ignore (double-tap).
-    if (etat.nbCoups <= _coupsJeus) return;
+    if (etat.nbCoups <= _coupsJeus) return false;
     _coupsJeus = etat.nbCoups;
     widget.client.poserCarte();
+    return true;
   }
 
   /// A-t-on déjà tapé pendant la fenêtre courante ?
@@ -289,10 +373,276 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
 
   void _taper() {
     final debut = _debutFenetre;
-    if (debut == null || _tapeEnvoyee) return;
+    if (debut == null || _tapeEnvoyee || !_feuDoublon) {
+      return;
+    }
     _tapeEnvoyee = true;
     final delai = DateTime.now().difference(debut).inMilliseconds;
     widget.client.taper(delai);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Animations, alignées sur la table 1v1                              //
+  // ------------------------------------------------------------------ //
+  void _animerAnnonce(_AnnonceCarte annonce) {
+    final index = _numerosJoueurs().indexOf(annonce.siege);
+    if (index >= 0) {
+      _animerCartePosee(index, annonce.code, annonce.siege == _monSiege);
+    }
+  }
+
+  void _animerCartePosee(
+    int indexJoueur,
+    String code,
+    bool venantDeMoi,
+  ) {
+    final taille = _tailleTable;
+    if (taille == Size.zero) return;
+
+    final vitesse = venantDeMoi ? 1200 : 900 + _rng.nextDouble() * 1400;
+    final centre = _rectTapis(taille).center;
+    final arrivee = Offset(
+      centre.dx + (_rng.nextDouble() - 0.5) * 70,
+      centre.dy + (_rng.nextDouble() - 0.5) * 44,
+    );
+    final depart = _origineJoueur(indexJoueur, taille);
+    final rotationFinale = (_rng.nextDouble() - 0.5) * 0.6;
+
+    late final Widget volante;
+    volante = CarteVolante(
+      key: UniqueKey(),
+      depart: depart,
+      arrivee: arrivee,
+      vitessePixelsSeconde: vitesse,
+      codeCarte: code,
+      rotationFinale: rotationFinale,
+      onAtterrissage: () {
+        if (!mounted) return;
+        setState(() {
+          _volantes.remove(volante);
+          final arrive = _CarteCentre(
+            code: code,
+            position: arrivee,
+            rotation: rotationFinale,
+          );
+          _centreVisible.add(arrive);
+        });
+        _declencherRamassageEnAttente();
+      },
+    );
+    setState(() => _volantes.add(volante));
+  }
+
+  void _onPliRamasse(int? gagnant, int nombreCartes, String raison) {
+    final evenement = _EvenementPli(
+      vainqueur: gagnant,
+      nombreCartes: nombreCartes,
+      raison: raison,
+    );
+
+    if (_volantes.isNotEmpty) {
+      _ramassageEnAttente = true;
+      _evenementEnAttente = evenement;
+      _fermerDoublon();
+      return;
+    }
+    _executerRamassage(evenement);
+  }
+
+  void _executerRamassage(_EvenementPli evenement) {
+    final taille = _tailleTable;
+
+    if (taille == Size.zero ||
+        _centreVisible.isEmpty ||
+        evenement.vainqueur == null) {
+      _jouerEffetPli(evenement);
+      setState(() {
+        _feuDoublon = false;
+        _debutFenetre = null;
+        _tapeEnvoyee = false;
+      });
+      return;
+    }
+
+    _jouerEffetPli(evenement);
+    setState(() {
+      _ramassage = _LotRamasse(
+        cartes: List<_CarteCentre>.of(_centreVisible),
+        arrivee: _origineJoueur(evenement.vainqueur!, taille),
+      );
+      _feuDoublon = false;
+      _debutFenetre = null;
+      _tapeEnvoyee = false;
+      _centreVisible.clear();
+    });
+    _ctrlRamasse.forward(from: 0).whenComplete(() {
+      if (mounted) setState(() => _ramassage = null);
+    });
+  }
+
+  void _fermerDoublon() {
+    if (!mounted) return;
+    setState(() {
+      _feuDoublon = false;
+    });
+  }
+
+  void _declencherRamassageEnAttente() {
+    if (!_ramassageEnAttente || _volantes.isNotEmpty) return;
+    _ramassageEnAttente = false;
+    final evenement = _evenementEnAttente;
+    _evenementEnAttente = null;
+    if (evenement != null) _executerRamassage(evenement);
+  }
+
+  void _repererDepuisEtat(EtatTable etat) {
+    final taille = _tailleTable;
+    if (taille == Size.zero || _volantes.isNotEmpty) return;
+    if (_ramassageEnAttente) return;
+    // Les annonces de pose sont la source normale du rendu. L'instantané ne
+    // sert qu'à repeupler un tapis vide (page initiale ou reconnexion), pas
+    // à réécrire un pli déjà animé.
+    if (_annonceEnAttente != null || _centreVisible.isNotEmpty) return;
+    final cartes = etat.pli;
+    if (cartes.isEmpty) {
+      _centreVisible.clear();
+      if (mounted) setState(() {});
+      return;
+    }
+
+    final positions = _positionsCentre(taille, cartes.length);
+    _centreVisible.addAll([
+        for (var i = 0; i < cartes.length; i++)
+          _CarteCentre(
+            code: cartes[i],
+            position: positions[i],
+            rotation: (_rng.nextDouble() - 0.5) * 0.6,
+          ),
+      ]);
+    if (mounted) setState(() {});
+  }
+
+  List<Offset> _positionsCentre(Size taille, int nombre) {
+    final centre = _rectTapis(taille).center;
+    return [
+      for (var i = 0; i < nombre; i++)
+        Offset(
+          centre.dx + (_rng.nextDouble() - 0.5) * 70,
+          centre.dy + (_rng.nextDouble() - 0.5) * 44,
+        ),
+    ];
+  }
+
+  void _jouerEffetPli(_EvenementPli evenement) {
+    if (evenement.vainqueur == _monSiege) {
+      RetourTactile.gain();
+      final doublon = evenement.raison.toLowerCase() == 'doublon';
+      _lancerFlash(
+        doublon ? Colors.white : const Color(0xFF43A047),
+        doublon ? 0.55 : 0.40,
+        doublon ? 420 : 340,
+      );
+      _lancerPopup(evenement.nombreCartes, true, _iconeGain(evenement));
+      if (doublon) {
+        _lancerBanniere(Icons.back_hand, Colors.amberAccent, 700);
+      }
+      return;
+    }
+
+    RetourTactile.perte();
+    setState(() => _compteurSecousses++);
+    _lancerFlash(const Color(0xFFB71C1C), 0.38, 400);
+    _lancerPopup(evenement.nombreCartes, false, _iconePerte(evenement));
+    if (evenement.raison.toLowerCase() == 'doublon') {
+      _lancerBanniere(Icons.back_hand, Colors.redAccent, 680);
+    }
+  }
+
+  IconData? _iconeGain(_EvenementPli evenement) {
+    if (evenement.raison.toLowerCase() == 'doublon') return Icons.back_hand;
+    if (evenement.raison.toLowerCase() == 'defi_manque') {
+      return Icons.card_giftcard;
+    }
+    return null;
+  }
+
+  IconData? _iconePerte(_EvenementPli evenement) {
+    if (evenement.raison.toLowerCase() == 'doublon') return Icons.back_hand;
+    if (evenement.raison.toLowerCase() == 'defi_manque') return Icons.close;
+    return null;
+  }
+
+  void _lancerFlash(Color couleur, double opacite, int dureeMs) {
+    _timerFlash?.cancel();
+    setState(() {
+      _cleFlash++;
+      _flashCouleur = couleur;
+      _flashOpacite = opacite;
+      _flashDuree = min(dureeMs, kDureeMaxEffetMs);
+    });
+    _timerFlash = Timer(Duration(milliseconds: _flashDuree + 80), () {
+      if (mounted) setState(() => _flashCouleur = null);
+    });
+  }
+
+  void _lancerPopup(int nombre, bool estGain, IconData? icone) {
+    _timerPopup?.cancel();
+    setState(() {
+      _clePopup++;
+      _popupNombre = nombre;
+      _popupGain = estGain;
+      _popupIcone = icone;
+    });
+    _timerPopup = Timer(const Duration(milliseconds: kDureeMaxEffetMs + 80), () {
+      if (mounted) setState(() => _popupNombre = null);
+    });
+  }
+
+  void _lancerBanniere(IconData icone, Color couleur, int dureeMs) {
+    _timerBanniere?.cancel();
+    setState(() {
+      _cleBanniere++;
+      _banniereIcone = icone;
+      _banniereCouleur = couleur;
+    });
+    _timerBanniere = Timer(
+      Duration(milliseconds: min(dureeMs, kDureeMaxEffetMs)),
+      () {
+        if (mounted) setState(() => _banniereIcone = null);
+      },
+    );
+  }
+
+  Rect _rectTapis(Size z) {
+    final margeX = z.width * 0.07;
+    final cote = min(z.width - 2 * margeX, z.height * 0.56);
+    final left = (z.width - cote) / 2;
+    final top = z.height * 0.13;
+    return Rect.fromLTWH(left, top, cote, cote);
+  }
+
+  Offset _origineJoueur(int indexJoueur, Size z) {
+    final joueurs = _numerosJoueurs();
+    if (indexJoueur <= 0) return Offset(z.width / 2, z.height - 40);
+    return _origineAdversaire(indexJoueur - 1, joueurs.length - 1, z);
+  }
+
+  Offset _origineAdversaire(int rang, int nAdversaires, Size z) {
+    final angleDeg =
+        nAdversaires <= 1 ? 0.0 : -90 + (rang / (nAdversaires - 1)) * 180;
+    final rad = angleDeg * pi / 180;
+    return Offset(
+      z.width / 2 + z.width * 0.30 * sin(rad),
+      z.height * 0.035 + 8 - 8 * cos(rad),
+    );
+  }
+
+  List<int> _numerosJoueurs() {
+    final sieges = _etat?.sieges ?? const <SiegeInfo>[];
+    if (sieges.isEmpty) return const <int>[];
+    final numeros = sieges.map((siege) => siege.numero).toList()..sort();
+    final moi = _monSiege < 0 ? numeros.first : _monSiege;
+    return <int>[moi, ...numeros.where((numero) => numero != moi)];
   }
 
   void _afficherBilan(PartieFinie fin) {
@@ -386,42 +736,72 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
   // ------------------------------------------------------------------ //
   @override
   Widget build(BuildContext context) {
-    final etat = _etat;
-    final monSiegeInfo =
-        _monSiege < 0 ? null : etat?.sieges.firstWhere(
-              (s) => s.numero == _monSiege,
-              orElse: () => const SiegeInfo(
-                numero: -1,
-                pseudo: '',
-                nbCartes: 0,
-                present: false,
-                estBot: false,
-              ),
-            );
-    final monNbCartes = monSiegeInfo?.nbCartes ?? 0;
-    final aMonTour = etat?.suivant == _monSiege;
-
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF12694A), Color(0xFF0B3D2E), Color(0xFF071F18)],
-            stops: [0.0, 0.55, 1.0],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              Entete(onRetour: () => Navigator.of(context).pop()),
-              if (!_connecte) _bandeauPerdu(),
-              if (_rebours != null) _bandeauRebours(_rebours!),
-              if (_mouvement != null) _bandeauMouvement(_mouvement!),
-              Expanded(child: _tapis(etat, aMonTour)),
-              _zoneJoueur(monNbCartes, aMonTour),
-            ],
-          ),
+      backgroundColor: const Color(0xFF0B3D2E),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Entete(onRetour: () => Navigator.of(context).pop()),
+            if (!_connecte) _bandeauPerdu(),
+            if (_rebours != null) _bandeauRebours(_rebours!),
+            if (_mouvement != null) _bandeauMouvement(_mouvement!),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, contraintes) {
+                  _tailleTable = Size(contraintes.maxWidth, contraintes.maxHeight);
+                  final annonce = _annonceEnAttente;
+                  if (annonce != null && _tailleTable != Size.zero) {
+                    _annonceEnAttente = null;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) _animerAnnonce(annonce);
+                    });
+                  }
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned.fill(
+                        child: SecousseTapis(
+                          declencheur: _compteurSecousses,
+                          enfant: _table(_tailleTable),
+                        ),
+                      ),
+                      if (_flashCouleur != null)
+                        Positioned.fill(
+                          child: FlashPli(
+                            key: ValueKey(_cleFlash),
+                            couleur: _flashCouleur!,
+                            opaciteDepart: _flashOpacite,
+                            dureeMs: _flashDuree,
+                          ),
+                        ),
+                      if (_popupNombre != null)
+                        Positioned.fill(
+                          child: Center(
+                            child: PopupScore(
+                              key: ValueKey(_clePopup),
+                              nombre: _popupNombre!,
+                              estGain: _popupGain,
+                              icone: _popupIcone,
+                            ),
+                          ),
+                        ),
+                      if (_banniereIcone != null)
+                        Positioned.fill(
+                          child: Align(
+                            alignment: const Alignment(0, -0.45),
+                            child: BanniereIcone(
+                              key: ValueKey(_cleBanniere),
+                              icone: _banniereIcone!,
+                              couleur: _banniereCouleur,
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -499,80 +879,353 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
     );
   }
 
-  Widget _tapis(EtatTable? etat, bool aMonTour) {
-    final sieges = etat?.sieges ?? const <SiegeInfo>[];
-    final adversaires = _monSiege < 0
-        ? const <SiegeInfo>[]
-        : sieges.where((s) => s.numero != _monSiege).toList();
-
-    return GestureDetector(
-      // Le doublon se joue en TAPANT N'IMPORTE OÙ SUR LE TAPIS.
-      onTapDown: (_) {
-        if (_feuDoublon) _taper();
-      },
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: _feuDoublon
-              ? const Color(0xFF7B1F1F)
-              : const Color(0xFF0E5A41),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: _feuDoublon ? Colors.redAccent : Colors.white12,
-            width: _feuDoublon ? 3 : 1,
+  Widget _table(Size z) {
+    final etat = _etat;
+    if (etat == null) {
+      return const Center(
+        child: SizedBox(
+          width: 30,
+          height: 30,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.5,
+            valueColor: AlwaysStoppedAnimation(Colors.white38),
           ),
         ),
-        child: Stack(
+      );
+    }
+
+    final sieges = etat.sieges;
+    final adversaires = _monSiege < 0
+        ? const <SiegeInfo>[]
+        : sieges.where((siege) => siege.numero != _monSiege).toList();
+    SiegeInfo? monSiegeInfo;
+    if (_monSiege >= 0) {
+      for (final siege in sieges) {
+        if (siege.numero == _monSiege) {
+          monSiegeInfo = siege;
+          break;
+        }
+      }
+    }
+    final aMonTour = etat.suivant == _monSiege;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _tapis(z),
+        ..._zoneAdversaires(z, adversaires),
+        for (final carte in _centreVisible)
+          Positioned(
+            left: carte.position.dx - kLargeurCarteTapis / 2,
+            top: carte.position.dy - kHauteurCarteTapis / 2,
+            child: Transform.rotate(
+              angle: carte.rotation,
+              child: CarteWidget(
+                code: carte.code,
+                largeur: kLargeurCarteTapis,
+                hauteur: kHauteurCarteTapis,
+              ),
+            ),
+          ),
+        if (_ramassage != null)
+          for (final carte in _ramassage!.cartes)
+            Builder(
+              builder: (_) {
+                final t = Curves.easeIn.transform(_ctrlRamasse.value);
+                final position = Offset.lerp(
+                  carte.position,
+                  _ramassage!.arrivee,
+                  t,
+                )!;
+                return Positioned(
+                  left: position.dx - kLargeurCarteTapis / 2,
+                  top: position.dy - kHauteurCarteTapis / 2,
+                  child: Opacity(
+                    opacity: 1 - 0.7 * t,
+                    child: Transform.rotate(
+                      angle: carte.rotation * (1 - t),
+                      child: CarteWidget(
+                        code: carte.code,
+                        largeur: kLargeurCarteTapis,
+                        hauteur: kHauteurCarteTapis,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+        ..._volantes,
+        if (etat.defi != null)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 8,
+            child: Center(child: _bandeauDefi(etat.defi!)),
+          ),
+        if (aMonTour && (monSiegeInfo?.nbCartes ?? 0) > 0)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 116,
+            child: Center(child: _indiceSwipe()),
+          ),
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: TasJoueur(
+            nombreCartes: monSiegeInfo?.nbCartes ?? 0,
+            onCarteJouee: (_) {
+              if (!_poserCarte()) RetourTactile.refus();
+            },
+          ),
+        ),
+        if (_feuDoublon) _overlayTape(z),
+      ],
+    );
+  }
+
+  List<Widget> _zoneAdversaires(Size z, List<SiegeInfo> adversaires) {
+    if (_numerosJoueurs().length <= 2) {
+      final premier = adversaires.isEmpty ? null : adversaires.first;
+      return [
+        Positioned(
+          left: 0,
+          right: 0,
+          top: z.height * 0.02,
+          child: _panneauAdversaire(z, premier, _etat?.suivant),
+        ),
+      ];
+    }
+
+    return [
+      for (var i = 0; i < adversaires.length; i++)
+        Builder(
+          builder: (_) {
+            final n = adversaires.length;
+            final angleDeg = n <= 1 ? 0.0 : -90 + (i / (n - 1)) * 180;
+            final rad = angleDeg * pi / 180;
+            final x = z.width / 2 + z.width * 0.30 * sin(rad);
+            final y = z.height * 0.035 + 8 - 8 * cos(rad);
+            final adverse = adversaires[i];
+            return Positioned(
+              left: x - 55,
+              top: y,
+              child: FlecheJoueur(
+                joueur: JoueurUI(
+                  id: '${adverse.numero}',
+                  pseudo: adverse.pseudo,
+                  nombreCartes: adverse.nbCartes,
+                ),
+                angleRad: rad,
+              ),
+            );
+          },
+        ),
+    ];
+  }
+
+  Widget _panneauAdversaire(Size z, SiegeInfo? adverse, int? suivant) {
+    final actif = adverse != null && suivant == adverse.numero;
+    return Center(
+      child: Container(
+        constraints: BoxConstraints(maxWidth: z.width * 0.72),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: actif
+              ? const Color(0xFFFFD54F).withValues(alpha: 0.16)
+              : Colors.black.withValues(alpha: 0.34),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: actif ? const Color(0xFFFFD54F) : Colors.white24,
+            width: actif ? 2 : 1,
+          ),
+          boxShadow: actif
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFFFFD54F).withValues(alpha: 0.28),
+                    blurRadius: 16,
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Adversaires, en arc au-dessus.
-            Positioned(
-              top: 10,
-              left: 0,
-              right: 0,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  for (final adversaire in adversaires)
-                    _bandeauAdversaire(adversaire, etat?.suivant),
-                ],
-              ),
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Colors.white12,
+                  child: Icon(
+                    adverse?.estBot == true ? Icons.smart_toy : Icons.person,
+                    color: const Color(0xFFFFD54F),
+                    size: 21,
+                  ),
+                ),
+                if (actif)
+                  const SizedBox(
+                    width: 42,
+                    height: 42,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(Color(0xFFFFD54F)),
+                    ),
+                  ),
+              ],
             ),
-            // Pli, au centre.
-            Center(
-              child: _pliVue(),
+            const SizedBox(width: 10),
+            const Transform.scale(
+              scale: 0.95,
+              child: CarteWidget(largeur: 22, hauteur: 31),
             ),
-            // La carte du doublon, révélée au-dessus du pli.
-            //
-            // C'est elle qui amorce le chronomètre : le joueur doit voir
-            // QUELLE carte fait doublon avant de taper, sinon le tap est
-            // un pari aveugle (`docs/PROTOCOLE.md` §10.1).
-            if (_feuDoublon && _carteDoublon != null)
-              Center(
-                child: _carteDoublonVue(_carteDoublon!),
-              ),
-            // Défi en cours : qui doit répondre, et combien de chances reste.
-            //
-            // Sans ce bandeau, le joueur ne voit pas qu'un défi est ouvert :
-            // le défi est prioritaire sur tout le reste, il faut donc
-            // pouvoir l'identifier d'un coup d'œil.
-            if (etat?.defi != null)
-              Positioned(
-                bottom: 10,
-                left: 0,
-                right: 0,
-                child: Center(child: _bandeauDefi(etat!.defi!)),
-              ),
-            // Curseur « à toi de jouer ».
-            if (aMonTour)
-              const Positioned(
-                bottom: 10,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: _Pulseur(),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                adverse?.pseudo ?? '',
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.4,
                 ),
               ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white12,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Text(
+                '${adverse?.nbCartes ?? 0}',
+                style: const TextStyle(
+                  color: Color(0xFFFFD54F),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            if (adverse != null && !adverse.present) ...[
+              const SizedBox(width: 6),
+              const Icon(Icons.wifi_off, color: Colors.white38, size: 14),
+            ],
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _indiceSwipe() {
+    return AnimatedBuilder(
+      animation: _ctrlIndice,
+      builder: (context, _) {
+        final t = _ctrlIndice.value;
+        return Opacity(
+          opacity: 0.35 + 0.45 * t,
+          child: Transform.translate(
+            offset: Offset(0, -4 * t),
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: const BoxDecoration(
+                color: Color(0x33FFD54F),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.keyboard_double_arrow_up,
+                color: Color(0xFFFFD54F),
+                size: 22,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _tapis(Size z) {
+    final rect = _rectTapis(z);
+    return Positioned.fromRect(
+      rect: rect,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        decoration: BoxDecoration(
+          gradient: RadialGradient(
+            center: const Alignment(0, -0.1),
+            radius: 1.15,
+            colors: _feuDoublon
+                ? const [Color(0xFF7A2B2B), Color(0xFF5E1F1F), Color(0xFF3E1414)]
+                : const [Color(0xFF1A8159), Color(0xFF0F5C3E), Color(0xFF0A4630)],
+            stops: const [0.0, 0.62, 1.0],
+          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: _feuDoublon ? Colors.redAccent : Colors.white24,
+            width: _feuDoublon ? 3 : 2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: _feuDoublon ? Colors.red.withValues(alpha: 0.5) : Colors.black45,
+              blurRadius: _feuDoublon ? 30 : 24,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+        child: Center(
+          child: Container(
+            width: 96,
+            height: 96,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.10),
+                width: 2,
+              ),
+            ),
+            child: Icon(
+              Icons.style_outlined,
+              size: 34,
+              color: Colors.white.withValues(alpha: 0.10),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _overlayTape(Size z) {
+    final rect = _rectTapis(z);
+    return Positioned.fromRect(
+      rect: rect,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => _taper(),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Container(
+            color: Colors.red.withValues(alpha: 0.22),
+            alignment: Alignment.center,
+            child: AnimatedBuilder(
+              animation: _ctrlIndice,
+              builder: (context, _) {
+                final t = _ctrlIndice.value;
+                return Opacity(
+                  opacity: 0.55 + 0.45 * t,
+                  child: Transform.scale(
+                    scale: 0.9 + 0.18 * t,
+                    child: const Icon(
+                      Icons.back_hand,
+                      size: 62,
+                      color: Colors.white,
+                      shadows: [Shadow(color: Colors.black87, blurRadius: 16)],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -629,235 +1282,4 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne> {
     );
   }
 
-  /// La carte révélée par la fenêtre de doublon.
-  ///
-  /// Elle apparaît face visible au centre du tapis, au-dessus du pli, avec
-  /// une pulsation : le signal visuel « la fenêtre est ouverte, tapez ».
-  Widget _carteDoublonVue(String code) {
-    return _PulsationDoublon(
-      enfant: CarteWidget(code: code, largeur: 80, hauteur: 112),
-    );
-  }
-
-  Widget _pliVue() {
-    if (_pli.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    // On montre au plus les 5 dernières cartes, en éventail.
-    const maximum = 5;
-    final visibles = _pli.length > maximum
-        ? _pli.sublist(_pli.length - maximum)
-        : _pli;
-    const largeur = 44.0;
-    return SizedBox(
-      height: 120,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          for (var i = 0; i < visibles.length; i++)
-            Positioned(
-              left: (visibles.length - 1 - i) * 26.0,
-              child: Transform.rotate(
-                angle: (i - (visibles.length - 1) / 2) * 0.06,
-                child: CarteWidget(
-                  code: visibles[i],
-                  largeur: largeur,
-                  hauteur: largeur * 1.406,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _bandeauAdversaire(SiegeInfo adverse, int? suivant) {
-    final actif = suivant == adverse.numero;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 5),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.28),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: actif ? const Color(0xFFFFD54F) : Colors.white12,
-          width: actif ? 2 : 1,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (adverse.estBot)
-            const Icon(Icons.smart_toy, color: Colors.white38, size: 14)
-          else
-            const Icon(Icons.person, color: Colors.white54, size: 14),
-          const SizedBox(width: 6),
-          Text(
-            adverse.pseudo,
-            style: TextStyle(
-              color: adverse.present ? Colors.white : Colors.white38,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            '${adverse.nbCartes}',
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _zoneJoueur(int nbCartes, bool aMonTour) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Expanded(
-            child: TasJoueur(
-              nombreCartes: nbCartes,
-              onCarteJouee: (_) => _poserCarte(),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // La carte du dessus, pré-annoncée par le serveur. Elle est
-          // visible : c'est ce qui permet de préparer son coup, et c'est
-          // elle que l'animation du doublon met en scène.
-          if (_maCarte != null)
-            _carteDuJoueur(_maCarte!, aMonTour)
-          else
-            const SizedBox(width: 84),
-          const SizedBox(width: 12),
-          if (aMonTour)
-            Container(
-              height: 84,
-              width: 84,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFD54F),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(
-                Icons.play_arrow_rounded,
-                color: Color(0xFF071F18),
-                size: 44,
-              ),
-            )
-          else
-            const SizedBox(width: 84),
-        ],
-      ),
-    );
-  }
-
-  /// La carte du dessus du joueur, face visible.
-  Widget _carteDuJoueur(String code, bool aMonTour) {
-    return GestureDetector(
-      onTap: aMonTour ? _poserCarte : null,
-      child: Container(
-        width: 84,
-        height: 119,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFF80CBC4), width: 2),
-        ),
-        padding: const EdgeInsets.all(3),
-        child: CarteWidget(code: code, largeur: 72, hauteur: 101),
-      ),
-    );
-  }
-}
-
-/// Pulsation de la carte du doublon : le signal « la fenêtre est ouverte ».
-///
-/// Sans mot, comme le reste de l'UX universelle : la couleur et le
-/// mouvement suffisent.
-class _PulsationDoublon extends StatefulWidget {
-  final Widget enfant;
-
-  const _PulsationDoublon({required this.enfant});
-
-  @override
-  State<_PulsationDoublon> createState() => _PulsationDoublonState();
-}
-
-class _PulsationDoublonState extends State<_PulsationDoublon>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 420),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (context, enfant) => Transform.scale(
-        scale: 1.0 + 0.08 * _ctrl.value,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.redAccent.withValues(alpha: 0.35 + 0.4 * _ctrl.value),
-                blurRadius: 18 + 12 * _ctrl.value,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          child: enfant,
-        ),
-      ),
-      child: widget.enfant,
-    );
-  }
-}
-
-/// Curseur « à toi de jouer » : une pulsation douce, sans mot.
-class _Pulseur extends StatefulWidget {
-  const _Pulseur();
-
-  @override
-  State<_Pulseur> createState() => _PulseurState();
-}
-
-class _PulseurState extends State<_Pulseur>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 900),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (context, enfant) => Opacity(
-        opacity: 0.45 + 0.45 * _ctrl.value,
-        child: const Icon(
-          Icons.touch_app,
-          color: Color(0xFFFFD54F),
-          size: 30,
-        ),
-      ),
-    );
-  }
 }
