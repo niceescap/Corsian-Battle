@@ -1076,7 +1076,7 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
             const SizedBox(width: 10),
             Transform.scale(
               scale: 0.95,
-              child: CarteWidget(largeur: 22, hauteur: 31),
+              child: const CarteWidget(largeur: 22, hauteur: 31),
             ),
             const SizedBox(width: 10),
             Flexible(
