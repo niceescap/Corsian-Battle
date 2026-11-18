@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../diagnostic.dart';
+import '../geometry/geometrie_table_adaptative.dart';
 import '../modeles.dart';
 import '../net/client_jeu.dart';
 import '../net/erreur_reseau.dart';
@@ -166,6 +167,14 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
 
   /// Zone de jeu mesurée à chaque build : source de vérité du tapis et du vol.
   Size _tailleTable = Size.zero;
+
+  /// Géométrie adaptative courante, reconstruite quand la surface ou les
+  /// sièges occupés changent. Un cache évite de recalculer les ancres à
+  /// chaque image d'animation.
+  AdaptiveTableGeometry? _geometrie;
+  Size _surfaceGeometrie = Size.zero;
+  List<int> _siegesGeometrie = const <int>[];
+  int _siegeLocalGeometrie = -1;
 
   final List<StreamSubscription<dynamic>> _abonnements = [];
 
@@ -385,14 +394,13 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
   // Animations, alignées sur la table 1v1                              //
   // ------------------------------------------------------------------ //
   void _animerAnnonce(_AnnonceCarte annonce) {
-    final index = _numerosJoueurs().indexOf(annonce.siege);
-    if (index >= 0) {
-      _animerCartePosee(index, annonce.code, annonce.siege == _monSiege);
-    }
+    final siege = annonce.siege;
+    if (!_numerosJoueurs().contains(siege)) return;
+    _animerCartePosee(siege, annonce.code, siege == _monSiege);
   }
 
   void _animerCartePosee(
-    int indexJoueur,
+    int siege,
     String code,
     bool venantDeMoi,
   ) {
@@ -400,12 +408,8 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
     if (taille == Size.zero) return;
 
     final vitesse = venantDeMoi ? 1200.0 : 900 + _rng.nextDouble() * 1400;
-    final centre = _rectTapis(taille).center;
-    final arrivee = Offset(
-      centre.dx + (_rng.nextDouble() - 0.5) * 70,
-      centre.dy + (_rng.nextDouble() - 0.5) * 44,
-    );
-    final depart = _origineJoueur(indexJoueur, taille);
+    final arrivee = _positionDepot(taille, siege);
+    final depart = _origineJoueur(siege, taille);
     final rotationFinale = (_rng.nextDouble() - 0.5) * 0.6;
 
     late final Widget volante;
@@ -510,27 +514,22 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
       return;
     }
 
-    final positions = _positionsCentre(taille, cartes.length);
+    final sieges = _numerosJoueurs();
+    final siegeDuPli = _monSiege >= 0 ? _monSiege : null;
     _centreVisible.addAll([
         for (var i = 0; i < cartes.length; i++)
           _CarteCentre(
             code: cartes[i],
-            position: positions[i],
-            rotation: (_rng.nextDouble() - 0.5) * 0.6,
+            position: _positionDepot(
+              taille,
+              sieges.isEmpty
+                  ? siegeDuPli
+                  : sieges[(i + 1) % sieges.length],
+            ),
+            rotation: (_rng.nextDouble() - 0.5) * 0.3,
           ),
       ]);
     if (mounted) setState(() {});
-  }
-
-  List<Offset> _positionsCentre(Size taille, int nombre) {
-    final centre = _rectTapis(taille).center;
-    return [
-      for (var i = 0; i < nombre; i++)
-        Offset(
-          centre.dx + (_rng.nextDouble() - 0.5) * 70,
-          centre.dy + (_rng.nextDouble() - 0.5) * 44,
-        ),
-    ];
   }
 
   void _jouerEffetPli(_EvenementPli evenement) {
@@ -614,6 +613,17 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
   }
 
   Rect _rectTapis(Size z) {
+    final geometrie = _construireGeometrie(z);
+    if (geometrie != null) {
+      final tapis = geometrie.tapis;
+      return Rect.fromLTWH(
+        tapis.left,
+        tapis.top,
+        tapis.width,
+        tapis.height,
+      );
+    }
+
     final margeX = z.width * 0.07;
     final cote = min(z.width - 2 * margeX, z.height * 0.56);
     final left = (z.width - cote) / 2;
@@ -621,28 +631,107 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
     return Rect.fromLTWH(left, top, cote, cote);
   }
 
-  Offset _origineJoueur(int indexJoueur, Size z) {
-    final joueurs = _numerosJoueurs();
-    if (indexJoueur <= 0) return Offset(z.width / 2, z.height - 40);
-    return _origineAdversaire(indexJoueur - 1, joueurs.length - 1, z);
+  Offset _origineJoueur(int siege, Size z) {
+    final geometrie = _construireGeometrie(z);
+    final point = geometrie?.siegeParIdentifiant(siege)?.positionTas;
+    if (point != null) return Offset(point.x, point.y);
+    return Offset(z.width / 2, z.height - 40);
   }
 
-  Offset _origineAdversaire(int rang, int nAdversaires, Size z) {
-    final angleDeg =
-        nAdversaires <= 1 ? 0.0 : -90 + (rang / (nAdversaires - 1)) * 180;
-    final rad = angleDeg * pi / 180;
+  /// Zone de dépôt d'un siège : ancre du vol et de la carte posée.
+  ///
+  /// Les cartes volent du tas du joueur vers une zone proche du centre,
+  /// orientée vers le tapis, ce qui garde le pli lisible sans jamais
+  /// prévisualiser la carte à venir.
+  Offset _positionDepot(Size z, int? siege) {
+    final centre = _rectTapis(z).center;
+    if (siege == null) {
+      return Offset(
+        centre.dx + (_rng.nextDouble() - 0.5) * 70,
+        centre.dy + (_rng.nextDouble() - 0.5) * 44,
+      );
+    }
+
+    final geometrie = _construireGeometrie(z);
+    final siegeGeometrie = geometrie?.siegeParIdentifiant(siege);
+    final zone = siegeGeometrie?.zoneDepot;
+    if (zone == null) {
+      return Offset(
+        centre.dx + (_rng.nextDouble() - 0.5) * 70,
+        centre.dy + (_rng.nextDouble() - 0.5) * 44,
+      );
+    }
+
     return Offset(
-      z.width / 2 + z.width * 0.30 * sin(rad),
-      z.height * 0.035 + 8 - 8 * cos(rad),
+      zone.center.x + (_rng.nextDouble() - 0.5) * zone.size.width * 0.35,
+      zone.center.y + (_rng.nextDouble() - 0.5) * zone.size.height * 0.2,
     );
   }
 
   List<int> _numerosJoueurs() {
     final sieges = _etat?.sieges ?? const <SiegeInfo>[];
-    if (sieges.isEmpty) return const <int>[];
-    final numeros = sieges.map((siege) => siege.numero).toList()..sort();
-    final moi = _monSiege < 0 ? numeros.first : _monSiege;
-    return <int>[moi, ...numeros.where((numero) => numero != moi)];
+    // Un siège participe s'il est occupé : joueur connecté (`present`),
+    // bot de remplacement, ou joueur déconnecté en cours de partie (le
+    // serveur continue de jouer ses coups au fil du délai de tour, donc son
+    // tas reste actif). Les sièges vides d'une table à 4 arrivent avec un
+    // pseudo replié sur « Joueur » et aucun de ces marqueurs.
+    final occupes = sieges
+        .where((siege) =>
+            siege.present || siege.estBot || siege.nbCartes != null)
+        .map((siege) => siege.numero)
+        .toSet()
+        .toList();
+    if (occupes.isEmpty) return const <int>[];
+
+    final moi = _monSiege >= 0 ? _monSiege : occupes.first;
+    occupes.add(moi);
+    occupes.sort();
+    return <int>[moi, ...occupes.where((numero) => numero != moi)];
+  }
+
+  /// Géométrie adaptative construite à partir des sièges réellement occupés.
+  ///
+  /// L'identité des joueurs reste portée par le serveur : seul le numéro de
+  /// siège est utilisé ici, et le siège local est toujours à 6h.
+  AdaptiveTableGeometry? _construireGeometrie(Size taille) {
+    if (taille == Size.zero ||
+        !taille.width.isFinite ||
+        !taille.height.isFinite) {
+      return null;
+    }
+
+    final numeros = _numerosJoueurs();
+    if (numeros.length < 2 || numeros.length > 4) return null;
+
+    if (_geometrie != null &&
+        taille == _surfaceGeometrie &&
+        numeros.length == _siegesGeometrie.length &&
+        (_monSiege >= 0 ? _monSiege : numeros.first) ==
+            _siegeLocalGeometrie) {
+      var identiques = true;
+      for (var i = 0; i < numeros.length; i++) {
+        if (numeros[i] != _siegesGeometrie[i]) {
+          identiques = false;
+          break;
+        }
+      }
+      if (identiques) return _geometrie;
+    }
+
+    try {
+      _geometrie = AdaptiveTableGeometry(
+        surface: TableSurface(width: taille.width, height: taille.height),
+        siegesOccupes: numeros,
+        siegeLocal: _monSiege >= 0 ? _monSiege : numeros.first,
+      );
+      _surfaceGeometrie = taille;
+      _siegesGeometrie = List<int>.unmodifiable(numeros);
+      _siegeLocalGeometrie = _monSiege >= 0 ? _monSiege : numeros.first;
+      return _geometrie;
+    } catch (_) {
+      _geometrie = null;
+      return null;
+    }
   }
 
   void _afficherBilan(PartieFinie fin) {
@@ -895,9 +984,13 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
     }
 
     final sieges = etat.sieges;
-    final adversaires = _monSiege < 0
-        ? const <SiegeInfo>[]
-        : sieges.where((siege) => siege.numero != _monSiege).toList();
+    final numerosOccupes = _numerosJoueurs();
+    final adversaires = sieges
+        .where((siege) =>
+            siege.numero != _monSiege &&
+            numerosOccupes.contains(siege.numero))
+        .toList()
+      ..sort((a, b) => a.numero.compareTo(b.numero));
     SiegeInfo? monSiegeInfo;
     if (_monSiege >= 0) {
       for (final siege in sieges) {
@@ -984,137 +1077,39 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
   }
 
   List<Widget> _zoneAdversaires(Size z, List<SiegeInfo> adversaires) {
-    if (_numerosJoueurs().length <= 2) {
-      final premier = adversaires.isEmpty ? null : adversaires.first;
-      return [
-        Positioned(
-          left: 0,
-          right: 0,
-          top: z.height * 0.02,
-          child: _panneauAdversaire(z, premier, _etat?.suivant),
-        ),
-      ];
-    }
-
     return [
-      for (var i = 0; i < adversaires.length; i++)
+      for (final adverse in adversaires)
         Builder(
           builder: (_) {
-            final n = adversaires.length;
-            final angleDeg = n <= 1 ? 0.0 : -90 + (i / (n - 1)) * 180;
-            final rad = angleDeg * pi / 180;
-            final x = z.width / 2 + z.width * 0.30 * sin(rad);
-            final y = z.height * 0.035 + 8 - 8 * cos(rad);
-            final adverse = adversaires[i];
+            final siege = _construireGeometrie(z)
+                ?.siegeParIdentifiant(adverse.numero);
+            if (siege == null) {
+              return const SizedBox.shrink();
+            }
+
+            // La flèche pointe du joueur vers le centre du tapis.
+            final angleRad = siege.angleRadians - pi / 2;
+            // La pastille est centrée sur l'ancre du siège.
+            final position = siege.positionTas;
             return Positioned(
-              left: x - 55,
-              top: y,
+              left: (position.x - 55)
+                  .clamp(0.0, z.width - 110)
+                  .toDouble(),
+              top: (position.y - 32)
+                  .clamp(0.0, z.height - 64)
+                  .toDouble(),
               child: FlecheJoueur(
                 joueur: JoueurUI(
                   id: '${adverse.numero}',
                   pseudo: adverse.pseudo,
                   nombreCartes: adverse.nbCartes,
                 ),
-                angleRad: rad,
+                angleRad: angleRad,
               ),
             );
           },
         ),
     ];
-  }
-
-  Widget _panneauAdversaire(Size z, SiegeInfo? adverse, int? suivant) {
-    final actif = adverse != null && suivant == adverse.numero;
-    return Center(
-      child: Container(
-        constraints: BoxConstraints(maxWidth: z.width * 0.72),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: actif
-              ? const Color(0xFFFFD54F).withValues(alpha: 0.16)
-              : Colors.black.withValues(alpha: 0.34),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: actif ? const Color(0xFFFFD54F) : Colors.white24,
-            width: actif ? 2 : 1,
-          ),
-          boxShadow: actif
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFFFFD54F).withValues(alpha: 0.28),
-                    blurRadius: 16,
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: Colors.white12,
-                  child: Icon(
-                    adverse?.estBot == true ? Icons.smart_toy : Icons.person,
-                    color: const Color(0xFFFFD54F),
-                    size: 21,
-                  ),
-                ),
-                if (actif)
-                  const SizedBox(
-                    width: 42,
-                    height: 42,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(Color(0xFFFFD54F)),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(width: 10),
-            Transform.scale(
-              scale: 0.95,
-              child: const CarteWidget(largeur: 22, hauteur: 31),
-            ),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Text(
-                adverse?.pseudo ?? '',
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.4,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.white12,
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: Text(
-                '${adverse?.nbCartes ?? 0}',
-                style: const TextStyle(
-                  color: Color(0xFFFFD54F),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-            if (adverse != null && !adverse.present) ...[
-              const SizedBox(width: 6),
-              const Icon(Icons.wifi_off, color: Colors.white38, size: 14),
-            ],
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _indiceSwipe() {
