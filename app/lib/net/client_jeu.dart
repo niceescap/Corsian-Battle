@@ -287,6 +287,23 @@ class ClientJeu {
   /// rendu de l'animation et l'appui. Aucune horloge murale n'est comparée
   /// entre joueurs (`docs/PROTOCOLE.md` §9).
   void taper(int delaiMs) {
+    final canal = _canal;
+    if (canal == null) {
+      // Cas limite : la socket a été fermée entre le tap et l'envoi. Le
+      // serveur ne recevra rien, et le joueur doit pouvoir le lire dans le
+      // journal de diagnostic (panneau « diagnostic » de la salle).
+      tracer('Tap NON envoyé : canal WebSocket absent '
+          '(delai_ms=$delaiMs, siege=$_siege)');
+      return;
+    }
+    if (!_ouvert) {
+      // Le canal existe encore mais n'est pas déclaré ouvert (fermeture en
+      // cours ou reconnexion non aboutie) : le message partirait dans le vide.
+      tracer('Tap NON envoyé : canal non ouvert '
+          '(delai_ms=$delaiMs, siege=$_siege, seq=$_seq)');
+      return;
+    }
+    tracer('Tap envoyé : delai_ms=$delaiMs siege=$_siege seq=$_seq');
     _envoyer({
       'type': 'tape',
       'seq_attendu': _seq,

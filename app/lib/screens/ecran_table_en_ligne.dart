@@ -15,6 +15,7 @@ import '../widgets/effet_pli.dart';
 import '../widgets/entete.dart';
 import '../widgets/fleche_joueur.dart';
 import '../widgets/tas_joueur.dart';
+import 'fenetre_tap.dart';
 
 /// Écran de la partie **en ligne**.
 ///
@@ -115,17 +116,22 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
   /// qu'au prochain instantané serveur.
   _AnnonceCarte? _annonceEnAttente;
 
-  /// Le pli est-il en train d'être ramassé ?
-  bool _feuDoublon = false;
+  /// État de la fenêtre de tap, géré par [FenetreTap] :
+  ///
+  /// - `rouge` : le tapis est teinté ;
+  /// - `montee` : la zone tactile est présente ;
+  /// - `autorisee` : un appui est recevable.
+  ///
+  /// `rouge` peut retomber au ramassage (`_fermerDoublon`) alors que le
+  /// serveur n'a pas encore rendu son verdict. L'autorisation suit donc
+  /// `_fenetreTap.autorisee`, jamais la couleur du tapis.
+  final FenetreTap _fenetreTap = FenetreTap();
 
   /// Un message d'erreur technique à montrer (écran hors-jeu).
   String? _erreur;
 
   /// L'app est-elle reconnectée ? (bandeau discret)
   bool _connecte = true;
-
-  /// Horodatage du début de la fenêtre de doublon (mesure locale du délai).
-  DateTime? _debutFenetre;
 
   /// Compte à rebours avant le lancement, en secondes.
   int? _rebours;
@@ -281,11 +287,14 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
       // Une fenêtre précédente peut encore exister si son verdict a été
       // perdu. Le serveur ne garde qu'un état de tape courant : on repart
       // donc d'une fenêtre propre pour le nouveau coup.
-      _tapeEnvoyee = false;
       setState(() {
-        _feuDoublon = true;
         // Le chronomètre part à l'annonce, comme à la table 1v1.
-        _debutFenetre = DateTime.now();
+        _fenetreTap.ouvrir(DateTime.now());
+        tracer('Doublon ouvert : siege=$_monSiege '
+            'cartes=${fenetre.cartes.length} '
+            'fenetre_ms=${fenetre.fenetreMs} '
+            'plancher_ms=${fenetre.plancherMs} '
+            'debut=${_fenetreTap.debut?.toIso8601String()}');
         final etat = _etat;
         final siege = etat?.suivant;
         final carte = fenetre.cartes.length > 1 ? fenetre.cartes[1] : null;
@@ -301,13 +310,15 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
       RetourTactile.doublon();
     });
 
-    ajouter(widget.client.verdicts, (DoublonResolu _) {
+    ajouter(widget.client.verdicts, (DoublonResolu verdict) {
       if (!mounted) return;
       setState(() {
-        _feuDoublon = false;
-        _debutFenetre = null;
-        _tapeEnvoyee = false;
+        _fenetreTap.resoudre();
       });
+      tracer('Doublon résolu : siege=$_monSiege '
+          'gagnant=${verdict.gagnant} '
+          'delai_ms_gagnant=${verdict.delaiMsGagnant} '
+          'personne=${verdict.personne}');
     });
 
     ajouter(widget.client.plis, (PliGagne pli) {
@@ -317,6 +328,10 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
 
     ajouter(widget.client.fins, (PartieFinie fin) {
       if (!mounted) return;
+      // La partie est finie : plus aucune fenêtre de tap n'est recevable.
+      setState(() {
+        _fenetreTap.resoudre();
+      });
       _afficherBilan(fin);
     });
 
@@ -374,19 +389,28 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
     return true;
   }
 
-  /// A-t-on déjà tapé pendant la fenêtre courante ?
+  /// Consomme l'appui sur la zone de doublon.
   ///
-  /// Le serveur ne retient que le PREMIER envoi d'un siège : en renvoyer
-  /// plusieurs serait compté comme une anomalie (et consigné en suspicion).
-  bool _tapeEnvoyee = false;
-
+  /// Le serveur ne retient que le PREMIER envoi d'un siège : les suivants
+  /// seraient consignés en anomalie. [FenetreTap] porte ce garde-fou et
+  /// interdit tout appui après un verdict (`doublon_resolu`, `pli_gagne`, fin
+  /// de partie).
   void _taper() {
-    final debut = _debutFenetre;
-    if (debut == null || _tapeEnvoyee || !_feuDoublon) {
+    final debut = _fenetreTap.debut;
+    final dejaEnvoye = _fenetreTap.envoye;
+    final autorisee = _fenetreTap.autorisee;
+    final delai = _fenetreTap.enregistrerTap(DateTime.now());
+    if (delai == null) {
+      tracer('Tap ignoré : siege=$_monSiege '
+          'debut_fenetre=${debut != null} '
+          'autorisee=$autorisee '
+          'deja_envoye=$dejaEnvoye '
+          'rouge=${_fenetreTap.rouge} '
+          'montee=${_fenetreTap.montee}');
       return;
     }
-    _tapeEnvoyee = true;
-    final delai = DateTime.now().difference(debut).inMilliseconds;
+    tracer('Tap envoyé : siege=$_monSiege delai_ms=$delai '
+        'rouge=${_fenetreTap.rouge}');
     widget.client.taper(delai);
   }
 
@@ -445,28 +469,31 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
       nombreCartes: nombreCartes,
       raison: raison,
     );
-
     if (_volantes.isNotEmpty) {
       _ramassageEnAttente = true;
       _evenementEnAttente = evenement;
       _fermerDoublon();
       return;
     }
+    // Sans animation en vol, le ramassage est immédiat : la fenêtre doit se
+    // refermer tout de suite, sinon le rouge resterait affiché.
     _executerRamassage(evenement);
   }
 
   void _executerRamassage(_EvenementPli evenement) {
     final taille = _tailleTable;
 
+    // Le pli est attribué : la fenêtre de tap se ferme pour tout le monde,
+    // même si l'animation n'a pas encore pu se déclencher (carte sans annonce,
+    // tapis pas encore mesuré, ramassage différé).
+    setState(() {
+      _fenetreTap.resoudre();
+    });
+
     if (taille == Size.zero ||
         _centreVisible.isEmpty ||
         evenement.vainqueur == null) {
       _jouerEffetPli(evenement);
-      setState(() {
-        _feuDoublon = false;
-        _debutFenetre = null;
-        _tapeEnvoyee = false;
-      });
       return;
     }
 
@@ -476,9 +503,6 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
         cartes: List<_CarteCentre>.of(_centreVisible),
         arrivee: _origineJoueur(evenement.vainqueur!, taille),
       );
-      _feuDoublon = false;
-      _debutFenetre = null;
-      _tapeEnvoyee = false;
       _centreVisible.clear();
     });
     _ctrlRamasse.forward(from: 0).whenComplete(() {
@@ -486,10 +510,18 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
     });
   }
 
+  /// Ferme la zone **visuelle** (tapis rouge) au début du ramassage.
+  ///
+  /// L'autorisation de taper, elle, n'est refermée qu'à
+  /// `_executerRamassage()`/`doublon_resolu` : jusqu'au verdict du serveur, un
+  /// appui reste recevable. Sans cette séparation, l'invité qui tape pendant
+  /// qu'une carte est encore en vol perdait son appui.
   void _fermerDoublon() {
     if (!mounted) return;
+    tracer('Fermeture visuelle du doublon (siege=$_monSiege '
+        'autorisee=${_fenetreTap.autorisee})');
     setState(() {
-      _feuDoublon = false;
+      _fenetreTap.fermerVisuel();
     });
   }
 
@@ -1049,7 +1081,10 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
             },
           ),
         ),
-        if (_feuDoublon) _overlayTape(z),
+        // La zone tactile est montée dès l'ouverture de la fenêtre : elle
+        // n'est retirée qu'au verdict, pas quand le rouge s'éteint au
+        // ramassage. Sinon l'invité qui tape encore perdrait son appui.
+        if (_fenetreTap.montee) _overlayTape(z),
       ],
     );
   }
@@ -1128,20 +1163,22 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
           gradient: RadialGradient(
             center: const Alignment(0, -0.1),
             radius: 1.15,
-            colors: _feuDoublon
+            colors: _fenetreTap.rouge
                 ? const [Color(0xFF7A2B2B), Color(0xFF5E1F1F), Color(0xFF3E1414)]
                 : const [Color(0xFF1A8159), Color(0xFF0F5C3E), Color(0xFF0A4630)],
             stops: const [0.0, 0.62, 1.0],
           ),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
-            color: _feuDoublon ? Colors.redAccent : Colors.white24,
-            width: _feuDoublon ? 3 : 2,
+            color: _fenetreTap.rouge ? Colors.redAccent : Colors.white24,
+            width: _fenetreTap.rouge ? 3 : 2,
           ),
           boxShadow: [
             BoxShadow(
-              color: _feuDoublon ? Colors.red.withValues(alpha: 0.5) : Colors.black45,
-              blurRadius: _feuDoublon ? 30 : 24,
+              color: _fenetreTap.rouge
+                  ? Colors.red.withValues(alpha: 0.5)
+                  : Colors.black45,
+              blurRadius: _fenetreTap.rouge ? 30 : 24,
               spreadRadius: 2,
             ),
           ],
@@ -1170,6 +1207,7 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
 
   Widget _overlayTape(Size z) {
     final rect = _rectTapis(z);
+    final rouge = _fenetreTap.rouge;
     return Positioned.fromRect(
       rect: rect,
       child: GestureDetector(
@@ -1178,7 +1216,7 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
         child: ClipRRect(
           borderRadius: BorderRadius.circular(24),
           child: Container(
-            color: Colors.red.withValues(alpha: 0.22),
+            color: rouge ? Colors.red.withValues(alpha: 0.22) : Colors.transparent,
             alignment: Alignment.center,
             child: AnimatedBuilder(
               animation: _ctrlIndice,

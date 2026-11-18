@@ -220,6 +220,34 @@ def test_fenetre_sans_tape_le_doublon_reste_bloquant():
     assert partie.doublons_tapes == 1
 
 
+def test_tap_de_siege_invite_est_accepte():
+    """Un `tape` du siège 1 (l'invité) gagne : aucun rôle n'est privilégié.
+
+    L'audit `bilan_diagnostic_tap_invite.md` a conclu que le code du tap est
+    symétrique ; ce test le verrouille pour éviter toute régression qui
+    réserverait le doublon au créateur ou au joueur actif.
+    """
+    async def scenario():
+        table = _table()
+        publie = Collecteur()
+        partie = PartieEnLigne(table, publie, _config(fenetre_tape_ms=80), seed=1)
+        await partie.lancer()
+        _imposer(partie, ["5S"], ["5H", "2C"], ["3D", "4S"])
+        tache = asyncio.create_task(partie.jouer(auto=False))
+        await _attendre_doublon(partie)
+        accepte, motif = partie.recevoir_tape(1, 200)   # siège invité
+        coup = await asyncio.wait_for(tache, timeout=5)
+        partie.detruire()
+        return publie, coup, accepte, motif
+
+    publie, coup, accepte, motif = asyncio.run(scenario())
+    assert (accepte, motif) == (True, None)
+    resolu = publie.du_type("doublon_resolu")[0]["d"]
+    assert resolu["gagnant"] == 1
+    assert coup is not None and coup.pli_gagne is not None
+    assert coup.pli_gagne["gagnant"] == 1 and coup.pli_gagne["raison"] == "doublon"
+
+
 def test_tap_apres_la_fenetre_est_encore_accepte():
     async def scenario():
         table = _table()

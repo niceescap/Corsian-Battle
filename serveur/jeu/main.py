@@ -804,8 +804,15 @@ async def _traiter(table: Table, siege: Siege, message: Dict[str, Any]) -> bool:
 
     if type_ == "tape":
         if table.partie is None or not table.partie.attend_tape():
-            # Aucune fenêtre ouverte : ignoré silencieusement, comme prévu par
-            # `PROTOCOLE.md` §10.2 (le message compte quand même dans le débit).
+            # Aucune fenêtre ouverte : ignoré, comme prévu par `PROTOCOLE.md`
+            # §10.2 (le message compte quand même dans le débit). La trace est
+            # purement diagnostique : elle permet de distinguer un tap qui
+            # n'arrive pas du serveur d'un tap arrivé hors fenêtre.
+            journal.info(
+                "tape ignorée (aucune fenêtre) siège=%d table=%s",
+                siege.numero,
+                table.code,
+            )
             return True
         donnees_tape = message.get("d")
         delai = donnees_tape.get("delai_ms") if isinstance(donnees_tape, dict) else None
