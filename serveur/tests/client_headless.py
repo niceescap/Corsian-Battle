@@ -1,8 +1,8 @@
 """Client de jeu sans interface : recetter le serveur **sans l'app Flutter**.
 
-Crée N comptes invités, ouvre une table, fait asseoir tout le monde, se déclare
-prêt, puis joue automatiquement jusqu'à la fin de la partie en imprimant le
-transcript des messages. C'est l'outil de recette du lot A (boucle de coups) et
+Crée N comptes invités, ouvre une table, attend que tout le monde soit connecté,
+puis le créateur lance la partie et les clients jouent automatiquement jusqu'à
+la fin en imprimant le transcript des messages. C'est l'outil de recette du lot A et
 il servira tel quel au lot B (fenêtre de doublon : il répond déjà `tape`).
 
     # En local, services lancés par serveur/lancer_local.sh
@@ -112,12 +112,7 @@ def url_ws(base_jeu: str) -> str:
 
 
 class SynchronisationAttente:
-    """Attend N sièges présents avant d'autoriser le premier `pret`.
-
-    À 3 joueurs, le premier `table_etat` arrive souvent avant la troisième
-    socket : sans barrière, les premiers clients se déclarent prêts trop tôt.
-    Les tables à 2 et 4 joueurs gardent le comportement historique.
-    """
+    """Attend N sièges présents avant le lancement par le créateur."""
 
     DELAI_S = 30.0
 
@@ -195,7 +190,8 @@ class Joueur:
         self.pseudo = compte.get("pseudo", "?")
         self.jeton = compte.get("jeton_acces", "")
         self.siege: Optional[int] = None
-        self.pret = False
+        self.createur_siege: Optional[int] = None
+        self.lancement_envoye = False
         self.dernier_seq_joue = -1
         # Nombre de coups déjà joués : c'est le **compteur de tour** du
         # serveur. Le client ne joue que si le tour a changé depuis son
@@ -318,23 +314,28 @@ class Joueur:
 
                     if type_ == "bienvenue":
                         self.siege = donnees.get("siege")
+                        self.createur_siege = donnees.get("createur_siege")
                         self.log(f"connecté siège {self.siege} · table {donnees.get('table')}")
 
                     elif type_ == "table_etat":
                         if self.synchronisation is not None:
                             self.synchronisation.observer(donnees.get("sieges"))
-                            peut_pret = (
+                            peut_lancer = (
                                 self.synchronisation.prete
                                 and self.synchronisation.presents
                                 >= self.synchronisation.attendus
                                 and not self.synchronisation.abandonnee
                             )
                         else:
-                            peut_pret = True
-                        if donnees.get("etat") == "attente" and peut_pret and not self.pret:
-                            self.pret = True
-                            await socket.send(json.dumps({"type": "pret"}))
-                            self.log("prêt")
+                            peut_lancer = False
+                        self.createur_siege = donnees.get("createur_siege", self.createur_siege)
+                        if (donnees.get("etat") == "attente" and peut_lancer
+                                and self.siege is not None
+                                and self.siege == self.createur_siege
+                                and not self.lancement_envoye):
+                            self.lancement_envoye = True
+                            await socket.send(json.dumps({"type": "lancer"}))
+                            self.log("lancement demandé")
                         elif self.a_mon_tour(donnees):
                             await self.jouer(socket)
 
@@ -365,11 +366,18 @@ class Joueur:
                         return donnees
 
                     elif type_ == "erreur":
+                        if donnees.get("code") == "pas_assez_joueurs":
+                            self.lancement_envoye = False
                         if donnees.get("code") != "pas_ton_tour":
                             self.log(f"erreur : {donnees.get('code')}")
 
+                    elif type_ == "compte_a_rebours":
+                        if donnees.get("annule"):
+                            self.lancement_envoye = False
+                        self.log(f"· {type_}")
+
                     elif type_ in ("joueur_rejoint", "joueur_pret", "joueur_parti",
-                                   "partie_lancee", "compte_a_rebours", "pong"):
+                                   "partie_lancee", "pong"):
                         self.log(f"· {type_}")
             finally:
                 tache_ping.cancel()
@@ -380,9 +388,7 @@ class Joueur:
 # ---------------------------------------------------------------------------
 async def une_partie(args: argparse.Namespace, numero: int) -> Dict[str, Any]:
     type_partie = "duel" if args.joueurs == 2 else "table_quatre"
-    synchronisation = (
-        SynchronisationAttente(args.joueurs) if args.joueurs > 2 else None
-    )
+    synchronisation = SynchronisationAttente(args.joueurs)
     comptes = [
         creer_compte(args.auth, i, args.sans_auth, args.reutiliser_comptes)
         for i in range(args.joueurs)

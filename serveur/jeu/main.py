@@ -438,7 +438,7 @@ def fermer_table(
 # Lancement, fin et persistance des parties
 # ---------------------------------------------------------------------------
 async def _lancer_partie(table: Table) -> None:
-    """Compte à rebours puis lancement, une fois tous les humains prêts."""
+    """Compte à rebours puis lancement avec les sièges connectés."""
     table.etat = "compte_a_rebours"
     await _diffuser(
         table,
@@ -449,16 +449,17 @@ async def _lancer_partie(table: Table) -> None:
     if table.partie is not None:
         return                                    # lancée entre-temps
     # Le roster est revérifié juste avant la création : seuls les sièges
-    # réellement connectés comptent, et ils doivent tous être prêts. Un siège
-    # simplement réservé ne doit pas provoquer une distribution à son profit.
+    # réellement connectés comptent. Un siège simplement réservé ne doit pas
+    # provoquer une distribution à son profit.
     connectes = table.sieges_connectes()
-    if len(connectes) < 2 or not all(s.pret for s in connectes):
+    if len(connectes) < 2:
         table.etat = "attente"                    # un joueur est parti : on attend
         await _diffuser(
             table,
             {"type": "compte_a_rebours", "seq": table.prochain_seq(),
              "d": {"secondes": 0, "annule": True}},
         )
+        await _instantane_par_siege(table, table.prochain_seq())
         return
     async def sur_suspicion(suspects: List[Dict[str, Any]]) -> None:
         await _consigner_suspicions(table, suspects)
@@ -675,7 +676,8 @@ async def websocket_jeu(websocket: WebSocket) -> None:
         {
             "type": "bienvenue",
             "seq": 0,
-            "d": {"table": table.code, "siege": siege.numero, "seq_courant": table.seq},
+            "d": {"table": table.code, "siege": siege.numero, "seq_courant": table.seq,
+                  "createur_siege": table.createur_siege},
         },
     )
     await _instantane_par_siege(table, table.prochain_seq())
@@ -724,6 +726,8 @@ async def websocket_jeu(websocket: WebSocket) -> None:
             {"type": "joueur_parti", "seq": table.prochain_seq(),
              "d": {"siege": siege.numero, "remplace_par_bot": False}},
         )
+        if table.etat == "attente":
+            await _instantane_par_siege(table, table.prochain_seq())
         journal.info("WS fermé · table=%s siège=%d", table.code, siege.numero)
 
 
@@ -772,8 +776,24 @@ async def _traiter(table: Table, siege: Siege, message: Dict[str, Any]) -> bool:
             table,
             {"type": "joueur_pret", "seq": table.prochain_seq(), "d": {"siege": siege.numero}},
         )
-        if table.tous_prets() and table.partie is None:
-            await _lancer_partie(table)
+        return True
+
+    if type_ == "lancer":
+        if not any(connecte is siege for connecte in table.sieges_connectes()):
+            return True
+        if siege.joueur_id != table.createur_id:
+            await _envoyer(siege.websocket, _message_erreur("pas_createur", "Seul le créateur peut lancer la partie."))
+            return True
+        if table.etat == "terminee":
+            await _envoyer(siege.websocket, _message_erreur("table_terminee", "La table est terminée."))
+            return True
+        if table.etat != "attente" or table.partie is not None:
+            await _envoyer(siege.websocket, _message_erreur("deja_lancee", "La partie est déjà lancée."))
+            return True
+        if len(table.sieges_connectes()) < 2:
+            await _envoyer(siege.websocket, _message_erreur("pas_assez_joueurs", "Il faut au moins deux joueurs connectés."))
+            return True
+        await _lancer_partie(table)
         return True
 
     if type_ == "quitter":

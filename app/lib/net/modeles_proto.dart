@@ -85,6 +85,9 @@ class EtatTable {
   /// Siège de ce client (`-1` si inconnu).
   final int monSiege;
 
+  /// Siège du créateur, absent avec un ancien serveur.
+  final int? createurSiege;
+
   /// Cartes du pli en cours — publiques.
   final List<String> pli;
 
@@ -108,6 +111,7 @@ class EtatTable {
     required this.type,
     required this.sieges,
     required this.monSiege,
+    this.createurSiege,
     required this.pli,
     required this.resteNeutre,
     required this.suivant,
@@ -133,6 +137,7 @@ class EtatTable {
       monSiege: (json['mon_siege'] as num?)?.toInt() ??
           (json['siege'] as num?)?.toInt() ??
           -1,
+      createurSiege: (json['createur_siege'] as num?)?.toInt(),
       pli: (json['pli'] is List)
           ? (json['pli'] as List).map((c) => '$c').toList()
           : const [],
@@ -171,6 +176,7 @@ class EtatTable {
         type: type,
         sieges: sieges,
         monSiege: monSiege,
+        createurSiege: createurSiege,
         pli: pli,
         resteNeutre: resteNeutre,
         suivant: suivant,

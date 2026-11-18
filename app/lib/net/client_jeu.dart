@@ -275,6 +275,9 @@ class ClientJeu {
     _envoyer({'type': 'pret'});
   }
 
+  /// Demande le lancement de la partie par le créateur.
+  void lancer() => _envoyer({'type': 'lancer'});
+
   /// Pose **la carte du dessus** du siège : le client ne choisit jamais
   /// de carte, c'est le serveur qui sait laquelle c'est.
   void poserCarte() {

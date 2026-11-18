@@ -62,7 +62,7 @@ Le jeton **n'est jamais passé en query string** (il finirait dans les journaux 
 ```
 client ──► connexion WebSocket (/ws)
 client ──► {"type":"bonjour","d":{"jeton":"<JWT accès>","table":"K7M2QP","version_proto":1}}
-serveur ─► {"type":"bienvenue","seq":0,"d":{"table":"K7M2QP","siege":2,"seq_courant":148}}
+serveur ─► {"type":"bienvenue","seq":0,"d":{"table":"K7M2QP","siege":2,"seq_courant":148,"createur_siege":0}}
 serveur ─► {"type":"table_etat","seq":148,"d":{…}}          ← instantané filtré (§6)
 ```
 
@@ -71,22 +71,22 @@ Délai maximal pour envoyer `bonjour` : **5 s**, sinon fermeture `4408`.
 ## 4. États d'une table
 
 ```
-attente ──(tous les sièges prêts)──► compte_a_rebours ──(3 s)──► en_jeu ──► terminee
-   ▲                                                                    │
-   └────────────────── un joueur quitte avant le lancement ─────────────┘
+attente ──(lancer par le créateur, ≥ 2 connectés)──► compte_a_rebours ──(3 s)──► en_jeu ──► terminee
+   ▲                                                     │
+   └────────── moins de 2 joueurs connectés ──────────────┘
 ```
 
 | État | Ce qui se passe |
 |---|---|
-| `attente` | Les sièges se remplissent ; chaque arrivant envoie `pret` **dès qu'il voit la table** ; la partie démarre dès que 2 sièges au moins sont occupés et prêts |
-| `compte_a_rebours` | 3 s, annulé si un joueur se déconnecte |
+| `attente` | Le créateur envoie `lancer` quand au moins 2 joueurs sont connectés ; `pret` reste un indicateur facultatif et ne lance rien |
+| `compte_a_rebours` | 3 s, annulé si moins de 2 joueurs sont encore connectés à son terme |
 | `en_jeu` | Distribution faite par le serveur, boucle de coups |
 | `terminee` | `partie_finie` émis, la table reste ouverte 30 s pour l'affichage du bilan puis est fermée |
 
-> ⚠️ **Le `pret` vient de la SALLE D'ATTENTE, jamais de l'écran de jeu.**
-> L'écran de jeu n'est atteint qu'**après** le lancement : un `pret` envoyé
-> depuis là-bas n'arriverait jamais, et la table resterait bloquée en
-> `attente` — sans aucun message d'erreur.
+Le serveur vérifie l'identité du créateur et les connexions avant le compte à rebours,
+puis revérifie les joueurs connectés avant de distribuer. Les sièges réservés sans
+connexion ne comptent pas. Une ancienne APK n'envoyant que `pret` ne peut plus lancer
+une partie ; la table reste en attente jusqu'à réception de `lancer` du créateur.
 
 > ⚠️ **Le passage à `en_jeu` passe par un `table_etat`.** C'est le seul
 > message qui porte `etat: "en_jeu"` ; `partie_lancee` et
@@ -111,7 +111,8 @@ native, fonctionne dès S2.
 | `type` | `d` | Effet |
 |---|---|---|
 | `bonjour` | `jeton`, `table`, `version_proto` | Ouvre la session (§3) |
-| `pret` | — | Marque le siège prêt en `attente` |
+| `pret` | — | Marque le siège prêt en `attente`, sans lancer la partie |
+| `lancer` | — | Le créateur connecté demande le lancement avec au moins deux joueurs connectés |
 | `poser_carte` | — | Joue **la carte du dessus** du siège. Le client ne désigne jamais une carte : le serveur la connaît, c'est la règle du jeu |
 | `tape` | `delai_ms` (entier) | Déclare un appui sur le tapis pendant une fenêtre de doublon (§10) |
 | `ping` | — | Réponse `pong` ; sert à l'estimation d'offset d'affichage |
@@ -123,7 +124,7 @@ native, fonctionne dès S2.
 
 | `type` | Contenu public | Destiné à |
 |---|---|---|
-| `bienvenue` | `table`, `siege`, `seq_courant` | le client qui se connecte |
+| `bienvenue` | `table`, `siege`, `seq_courant`, `createur_siege` | le client qui se connecte |
 | `table_etat` | instantané complet filtré (§6) | un client (reconnexion), ou **un siège par coup** |
 | `joueur_rejoint` | `siege`, `pseudo`, `est_bot` | tous |
 | `joueur_pret` | `siege` | tous |
@@ -141,6 +142,11 @@ native, fonctionne dès S2.
 | `partie_finie` | `gagnant`, `raison`, `stats` par siège, `duree_ms`, `nb_coups` | tous |
 | `pong` | `seq_courant` | le demandeur |
 | `erreur` | `code`, `message` (technique, jamais affiché tel quel à l'écran) | le fautif |
+
+Pour `lancer`, les codes d'erreur sont `pas_createur` (émetteur différent du
+créateur), `table_terminee` (table terminée), `deja_lancee` (compte à rebours
+ou partie déjà commencée), et `pas_assez_joueurs` (moins de deux joueurs
+connectés). La session reste ouverte.
 
 `raison` ∈ `doublon` · `defi_manque` · `victoire` · `abandon` · `partie_nulle` (garde-fou de
 boucle infinie du moteur : aucune présentation « Match interrompu », mais un pictogramme de
@@ -160,6 +166,7 @@ partie nulle, conformément à l'UX déjà en place).
        "ma_carte": "KH"}
     ],
     "mon_siege": 2,
+    "createur_siege": 0,
     "pli": ["7C", "7H"],
     "reste_neutre": 0,
     "suivant": 2,
@@ -173,6 +180,8 @@ partie nulle, conformément à l'UX déjà en place).
 Règle : **chaque champ privé n'apparaît que dans la copie destinée à son propriétaire.**
 `ma_carte` n'est présent que pour le siège concerné. Le pli est public ; les tas adverses ne
 le sont que par leur **taille**.
+`createur_siege` est le numéro public du siège du créateur ; son identifiant interne
+`createur_id` n'est jamais transmis.
 
 **Fréquence.** Un instantané est envoyé :
 - à l'ouverture de la socket (état de la table) ;
@@ -382,7 +391,7 @@ l'instantané.
 
 ```
 C ─► {"type":"bonjour","d":{"jeton":"eyJ…","table":"K7M2QP","version_proto":1}}
-S ─► {"type":"bienvenue","seq":0,"d":{"table":"K7M2QP","siege":2,"seq_courant":41}}
+S ─► {"type":"bienvenue","seq":0,"d":{"table":"K7M2QP","siege":2,"seq_courant":41,"createur_siege":0}}
 S ─► {"type":"table_etat","seq":41,"d":{"etat":"en_jeu","mon_siege":2,…,"pli":["3D"],"suivant":2}}
 S ─► {"type":"ta_carte_suivante","seq":41,"d":{"carte":"KH"}}
 C ─► {"type":"poser_carte","seq_attendu":41,"d":{}}
@@ -412,3 +421,7 @@ la priorité du doublon sur le défi en cours est respectée, comme dans le mote
 - Ajout de champ = compatible (les clients ignorent l'inconnu). Retrait ou changement de
   sémantique = incrémentation de la version.
 - L'app embarque la version qu'elle sait parler ; le serveur accepte une plage (V1 : `1`).
+
+Pour le lancement explicite, la version reste à `1` : `pret` reste accepté mais ne
+déclenche plus de partie. Les anciennes APK doivent être remplacées pour que le
+créateur puisse envoyer `lancer`.

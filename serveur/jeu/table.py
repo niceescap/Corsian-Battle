@@ -126,6 +126,11 @@ class Table:
                 return siege
         return None
 
+    @property
+    def createur_siege(self) -> Optional[int]:
+        createur = self.siege_de(self.createur_id) if self.createur_id is not None else None
+        return createur.numero if createur is not None else None
+
     def nb_humains(self) -> int:
         return sum(1 for s in self.sieges if s.occupe() and not s.est_bot)
 
@@ -209,6 +214,7 @@ class Table:
             "type": self.type_partie,
             "sieges": sieges,
             "mon_siege": mon_siege,
+            "createur_siege": self.createur_siege,
             "pli": [],
             "reste_neutre": 0,
             "suivant": None,

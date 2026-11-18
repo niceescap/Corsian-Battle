@@ -15,6 +15,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -66,7 +67,7 @@ def _table(type_partie: str, connectes: List[tuple], reserves: List[tuple] = ())
         siege.joueur_id = joueur_id
         siege.pseudo = pseudo
         siege.present = True
-        siege.pret = True
+        siege.pret = False
         siege.websocket = SOCKET
     for numero, joueur_id, pseudo in reserves:
         siege = table.siege(numero)
@@ -82,10 +83,27 @@ def _table(type_partie: str, connectes: List[tuple], reserves: List[tuple] = ())
 
 def _lancer(table: Table, seed: int = 1) -> tuple:
     async def scenario():
+        from serveur.jeu import main as jeu_main
+
         publie = Collecteur()
-        partie = PartieEnLigne(table, publie, _config(), seed=seed)
-        await partie.lancer()
-        return partie, publie
+        async def diffuser(tbl, message, vers=None, sauf=None):
+            await publie(tbl, message, vers)
+
+        async def envoyer(websocket, message):
+            publie.messages.append({"type": message.get("type"), "d": message.get("d"), "vers": None})
+            return True
+
+        def construire(tbl, diffuseur, cfg, **kwargs):
+            return PartieEnLigne(tbl, diffuseur, cfg, seed=seed, **kwargs)
+
+        createur = table.siege_de(table.createur_id)
+        with patch.object(jeu_main, "cfg", _config()), \
+             patch.object(jeu_main, "_diffuser", diffuser), \
+             patch.object(jeu_main, "_envoyer", envoyer), \
+             patch.object(jeu_main, "PartieEnLigne", construire):
+            await jeu_main._traiter(table, createur, {"type": "lancer"})
+        assert table.partie is not None
+        return table.partie, publie
 
     return asyncio.run(scenario())
 
@@ -267,7 +285,7 @@ def test_resolveur_simulation_ne_filtre_pas_les_tas_vides():
 
 
 def test_lancer_partie_ignore_un_siege_reserve():
-    """Le vrai déclencheur `_lancer_partie` ne distribue pas au réservataire."""
+    """Le message `lancer` ne distribue pas au réservataire."""
     from serveur.jeu import main as jeu_main
 
     table = _table(
@@ -284,15 +302,10 @@ def test_lancer_partie_ignore_un_siege_reserve():
         publie.messages.append({"type": message.get("type"), "d": message.get("d"), "vers": None})
         return True
 
-    original_diffuser = jeu_main._diffuser
-    original_envoyer = jeu_main._envoyer
-    jeu_main._diffuser = diffuseur_faux
-    jeu_main._envoyer = envoyer_faux
-    try:
-        asyncio.run(jeu_main._lancer_partie(table))
-    finally:
-        jeu_main._diffuser = original_diffuser
-        jeu_main._envoyer = original_envoyer
+    with patch.object(jeu_main, "cfg", _config()), \
+         patch.object(jeu_main, "_diffuser", diffuseur_faux), \
+         patch.object(jeu_main, "_envoyer", envoyer_faux):
+        asyncio.run(jeu_main._traiter(table, table.siege(0), {"type": "lancer"}))
 
     try:
         assert table.etat == "en_jeu"
@@ -331,7 +344,7 @@ if __name__ == "__main__":
         ("3 connectés sur table à 4", test_trois_connectes_sur_table_a_quatre),
         ("partie complète à 3 conserve 52", test_partie_complete_a_trois_conserve_52_cartes),
         ("résolveur accepte un tas vide", test_resolveur_simulation_ne_filtre_pas_les_tas_vides),
-        ("_lancer_partie ignore un réservataire", test_lancer_partie_ignore_un_siege_reserve),
+        ("lancer ignore un réservataire", test_lancer_partie_ignore_un_siege_reserve),
     ]
     reussis = sum(_executer(nom, fonction) for nom, fonction in cas)
     echecs = len(cas) - reussis

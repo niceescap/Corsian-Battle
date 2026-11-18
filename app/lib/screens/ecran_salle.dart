@@ -38,57 +38,29 @@ class EcranSalle extends StatefulWidget {
 class _EcranSalleState extends State<EcranSalle> {
   EtatTable? _etat;
   bool _basculeVersJeu = false;
+  bool _lancementEnvoye = false;
+  bool _reboursEnCours = false;
+  bool _connecte = false;
 
   StreamSubscription<EtatTable>? _abonnement;
-
-  /// A-t-on déjà déclaré le siège prêt ?
-  ///
-  /// C'est **la salle d'attente** qui le déclare, pas l'écran de jeu : le
-  /// serveur ne lance la partie que lorsque *tous* les sièges sont prêts
-  /// (`docs/PROTOCOLE.md` §4). Si l'on attendait l'écran de jeu pour
-  /// envoyer `pret`, il ne serait jamais atteint — la partie ne démarrerait
-  /// jamais. C'est un blocage invisible : la table reste en `attente`
-  /// indéfiniment, sans message d'erreur.
-  bool _pretEnvoye = false;
-
-  /// Dernier état de table vu.
-  ///
-  /// Il sert à **réarmer** le `pret` : si le compte à rebours est annulé
-  /// (un joueur se déconnecte au dernier moment), la table revient en
-  /// `attente` et le serveur attend de nouveau que **tout le monde** soit
-  /// prêt. Sans ce réarmement, le joueur qui était déjà prêt ne le
-  /// redéclarerait jamais, et la table resterait bloquée en `attente` —
-  /// le même symptôme que le verrou initial, dans une autre occasion.
-  String _etatPrecedent = '';
+  StreamSubscription<dynamic>? _abonnementErreurs;
+  StreamSubscription<int>? _abonnementRebours;
+  StreamSubscription<int>? _abonnementFermetures;
+  StreamSubscription<void>? _abonnementReconnexions;
 
   @override
   void initState() {
     super.initState();
+    _connecte = widget.client.ouvert;
     _abonnement = widget.client.etats.listen((EtatTable etat) {
       if (!mounted) return;
-      setState(() => _etat = etat);
-
-      if (etat.etat == 'attente') {
-        // On se déclare prêt dès qu'on voit la table en attente : c'est ce
-        // qui autorise le serveur à lancer la partie.
-        //
-        // Le `pret` est réarmé si la table était dans un autre état juste
-        // avant : c'est le cas du compte à rebours annulé (un joueur s'est
-        // déconnecté), où le serveur attend de nouveau que tout le monde
-        // soit prêt.
-        if (!_pretEnvoye || _etatPrecedent != 'attente') {
-          _pretEnvoye = true;
-          widget.client.marquerPret();
-        }
-      } else {
-        // La table a quitté l'attente (lancement ou compte à rebours) : on
-        // réarme le `pret` pour un éventuel cycle suivant.
-        _pretEnvoye = false;
-      }
-      _etatPrecedent = etat.etat;
+      setState(() {
+        _etat = etat;
+        if (etat.etat == 'compte_a_rebours') _reboursEnCours = true;
+      });
 
       // La table passe en jeu : on cède la place à l'écran de jeu.
-      if (etat.etat == 'en_jeu' || etat.etat == 'compte_a_rebours') {
+      if (etat.etat == 'en_jeu') {
         if (!_basculeVersJeu) {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute<void>(
@@ -103,12 +75,51 @@ class _EcranSalleState extends State<EcranSalle> {
         }
       }
     });
+    _abonnementErreurs = widget.client.erreurs.listen((erreur) {
+      if (!mounted) return;
+      final String? message = switch (erreur.code) {
+        'pas_createur' => 'Seul le créateur peut lancer la partie.',
+        'pas_assez_joueurs' => 'Il faut au moins deux joueurs connectés.',
+        'deja_lancee' => 'La partie est déjà lancée.',
+        'table_terminee' => 'Cette table est terminée.',
+        _ => null,
+      };
+      if (message == null) return;
+      setState(() => _lancementEnvoye = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    });
+    _abonnementRebours = widget.client.rebours.listen((secondes) {
+      if (!mounted) return;
+      setState(() {
+        if (_reboursEnCours && secondes == 0) {
+          _reboursEnCours = false;
+          _lancementEnvoye = false;
+        } else {
+          _reboursEnCours = true;
+        }
+      });
+    });
+    _abonnementFermetures = widget.client.fermetures.listen((_) {
+      if (!mounted) return;
+      setState(() {
+        _connecte = false;
+        _lancementEnvoye = false;
+        _reboursEnCours = false;
+      });
+    });
+    _abonnementReconnexions = widget.client.reconnexions.listen((_) {
+      if (mounted) setState(() => _connecte = true);
+    });
   }
 
   @override
   void dispose() {
     tracer('dispose EcranSalle');
     _abonnement?.cancel();
+    _abonnementErreurs?.cancel();
+    _abonnementRebours?.cancel();
+    _abonnementFermetures?.cancel();
+    _abonnementReconnexions?.cancel();
     if (!_basculeVersJeu) {
       unawaited(
         widget.client.disposing().onError<Object>((erreur, pile) {
@@ -130,11 +141,18 @@ class _EcranSalleState extends State<EcranSalle> {
     );
   }
 
+  void _lancer() {
+    setState(() => _lancementEnvoye = true);
+    widget.client.lancer();
+  }
+
   @override
   Widget build(BuildContext context) {
     final etat = _etat;
     final sieges = etat?.sieges ?? const <SiegeInfo>[];
-    final occupes = sieges.where((s) => s.present || s.pseudo.isNotEmpty).length;
+    final occupes = sieges.where((s) => s.present).length;
+    final estCreateur = etat != null && etat.createurSiege != null &&
+        etat.monSiege == etat.createurSiege;
 
     return Scaffold(
       body: Container(
@@ -281,6 +299,20 @@ class _EcranSalleState extends State<EcranSalle> {
                       ],
                     ),
                     const SizedBox(height: 18),
+                    if (estCreateur) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _connecte && occupes >= 2 &&
+                                  etat.etat == 'attente' &&
+                                  !_lancementEnvoye && !_reboursEnCours
+                              ? _lancer
+                              : null,
+                          child: const Text('Lancer la partie'),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                    ],
                     // Attente des autres joueurs.
                     const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
