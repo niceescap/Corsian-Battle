@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bataille_corse.cartes import CODES_RANG, Carte  # noqa: E402
 from bataille_corse.moteur import DefiEnCours  # noqa: E402
 from serveur.commun.config import config_jeu  # noqa: E402
+from serveur.jeu import evenements  # noqa: E402
 from serveur.jeu.partie import PartieEnLigne  # noqa: E402
 from serveur.jeu.table import GestionnaireTables, Table  # noqa: E402
 
@@ -47,6 +48,24 @@ class Collecteur:
 
     def du_type(self, type_: str) -> List[Dict[str, Any]]:
         return [message for message in self.messages if message["type"] == type_]
+
+
+async def _attendre_doublon(partie: PartieEnLigne) -> None:
+    """Synchronise le test sur la fenêtre prédictive du serveur."""
+    for _ in range(200):
+        if partie.attend_tape():
+            return
+        await asyncio.sleep(0.001)
+    raise AssertionError("la fenêtre de doublon ne s'est pas ouverte")
+
+
+async def _attendre_apres_alerte(partie: PartieEnLigne) -> None:
+    """Synchronise le test sur la fin de l'alerte visuelle uniquement."""
+    for _ in range(500):
+        if partie._doublon_en_attente:
+            return
+        await asyncio.sleep(0.001)
+    raise AssertionError("le doublon n'est pas resté actif après l'alerte")
 
 
 def _table(connectee: bool = True) -> Table:
@@ -165,27 +184,142 @@ def test_fenetre_ordre_des_messages_et_verdict():
     assert stats[0]["delai_tape_median_ms"] == 180
 
 
-def test_fenetre_sans_tape_personne():
+def test_fenetre_sans_tape_le_doublon_reste_bloquant():
     async def scenario():
         table = _table()
         publie = Collecteur()
         partie = PartieEnLigne(table, publie, _config(fenetre_tape_ms=80), seed=1)
         await partie.lancer()
         _imposer(partie, ["5S"], ["5H", "2C"], ["3D", "4S"])
-        debut = time.time()
-        coup = await asyncio.wait_for(partie.jouer(auto=False), timeout=5)
-        duree = time.time() - debut
-        partie.detruire()
-        return publie, partie, coup, duree
+        tache = asyncio.create_task(partie.jouer(auto=False))
+        await _attendre_doublon(partie)
+        await _attendre_apres_alerte(partie)
+        await asyncio.sleep(0)
 
-    publie, partie, coup, duree = asyncio.run(scenario())
-    assert duree >= 0.08, "la fenêtre doit aller jusqu'à son terme si personne ne tape"
+        etat_avant = evenements.Etat.capturer(partie.jeu)
+        assert partie.attend_tape() is True
+        assert await partie.poser_carte(0) is False
+        assert await partie.poser_carte(1) is False
+        assert evenements.Etat.capturer(partie.jeu) == etat_avant
+
+        accepte, motif = partie.recevoir_tape(0, 180)
+        assert (accepte, motif) == (True, None)
+        coup = await asyncio.wait_for(tache, timeout=5)
+        partie.detruire()
+        return publie, partie, coup
+
+    publie, partie, coup = asyncio.run(scenario())
+    assert publie.types().count("pli_gagne") == 1
+    assert "doublon_non_tape" not in publie.types()
+    assert coup is not None and coup.etait_doublon and not coup.doublon_non_tape
+    assert coup.pli_gagne is not None and coup.pli_gagne["gagnant"] == 0
+    assert coup.pli_gagne["raison"] == "doublon"
+    assert partie.jeu is not None and not partie.jeu.pli
+    assert partie.jeu.index_courant == 0
+    assert partie.tour_courant() == 0
+    assert partie.doublons_tapes == 1
+
+
+def test_tap_apres_la_fenetre_est_encore_accepte():
+    async def scenario():
+        table = _table()
+        publie = Collecteur()
+        partie = PartieEnLigne(table, publie, _config(fenetre_tape_ms=60), seed=1)
+        await partie.lancer()
+        _imposer(partie, ["5S"], ["5H", "2C"], ["3D", "4S"])
+        tache = asyncio.create_task(partie.jouer(auto=False))
+        await _attendre_doublon(partie)
+        await _attendre_apres_alerte(partie)
+        await asyncio.sleep(0)
+        assert partie.attend_tape() is True
+        accepte, motif = partie.recevoir_tape(1, 250)
+        coup = await asyncio.wait_for(tache, timeout=5)
+        partie.detruire()
+        return publie, coup, accepte, motif
+
+    publie, coup, accepte, motif = asyncio.run(scenario())
+    assert (accepte, motif) == (True, None)
+    assert coup is not None and coup.pli_gagne is not None
+    assert coup.pli_gagne["gagnant"] == 1 and coup.pli_gagne["raison"] == "doublon"
+    assert publie.types().count("pli_gagne") == 1
+    assert publie.types().count("doublon_resolu") == 1
+
+
+def test_plusieurs_taps_tardifs_designent_un_seul_gagnant():
+    async def scenario():
+        table = _table()
+        publie = Collecteur()
+        partie = PartieEnLigne(table, publie, _config(fenetre_tape_ms=60), seed=1)
+        await partie.lancer()
+        _imposer(partie, ["5S"], ["5H", "2C"], ["3D", "4S"])
+        tache = asyncio.create_task(partie.jouer(auto=False))
+        await _attendre_doublon(partie)
+        await _attendre_apres_alerte(partie)
+        await asyncio.sleep(0)
+        partie.recevoir_tape(1, 300)                  # Marc, plus lent
+        partie.recevoir_tape(0, 180)                  # Nina, plus rapide
+        coup = await asyncio.wait_for(tache, timeout=5)
+        partie.detruire()
+        return publie, partie, coup
+
+    publie, partie, coup = asyncio.run(scenario())
     resolu = publie.du_type("doublon_resolu")[0]["d"]
-    assert resolu["personne"] is True and resolu["gagnant"] is None
-    assert "doublon_non_tape" in publie.types()
-    assert "pli_gagne" not in publie.types()
-    assert coup.pli_gagne is None and coup.doublon_non_tape is True
-    assert partie.doublons_tapes == 0
+    assert resolu["gagnant"] == 0 and resolu["nb_tapes"] == 2
+    assert publie.types().count("pli_gagne") == 1
+    assert coup is not None and coup.pli_gagne is not None
+    assert coup.pli_gagne["gagnant"] == 0
+    assert partie.tour_courant() == 0
+
+
+def test_joueur_sans_carte_peut_gagner_le_doublon():
+    async def scenario():
+        table = _table()
+        publie = Collecteur()
+        partie = PartieEnLigne(table, publie, _config(fenetre_tape_ms=60), seed=1)
+        await partie.lancer()
+        _imposer(partie, ["5S"], ["5H", "2C"], [])
+        tache = asyncio.create_task(partie.jouer(auto=False))
+        await _attendre_doublon(partie)
+        await _attendre_apres_alerte(partie)
+        await asyncio.sleep(0)
+        accepte, motif = partie.recevoir_tape(1, 200)
+        coup = await asyncio.wait_for(tache, timeout=5)
+        partie.detruire()
+        return partie, coup, accepte, motif
+
+    partie, coup, accepte, motif = asyncio.run(scenario())
+    assert (accepte, motif) == (True, None)
+    assert coup is not None and coup.pli_gagne is not None
+    assert coup.pli_gagne["gagnant"] == 1
+    assert partie.tour_courant() == 1
+
+
+def test_la_partie_reprend_apres_attribution_du_doublon():
+    async def scenario():
+        table = _table()
+        publie = Collecteur()
+        partie = PartieEnLigne(table, publie, _config(fenetre_tape_ms=60), seed=1)
+        await partie.lancer()
+        _imposer(partie, ["5S"], ["5H", "2C"], ["3D", "4S"])
+        tache = asyncio.create_task(partie.jouer(auto=False))
+        await _attendre_doublon(partie)
+        await _attendre_apres_alerte(partie)
+        await asyncio.sleep(0)
+        partie.recevoir_tape(0, 180)
+        await asyncio.wait_for(tache, timeout=5)
+        assert partie.attend_tape() is False
+        assert partie.tour_courant() == 0
+        nb_messages_avant_reprise = len(publie.messages)
+        await partie.jouer(auto=True)
+        partie.detruire()
+        return publie, partie, nb_messages_avant_reprise
+
+    publie, partie, nb_avant = asyncio.run(scenario())
+    assert len(publie.messages) > nb_avant
+    assert partie.jeu is not None
+    assert len(partie.jeu.pli) == 1
+    assert partie.jeu.pli[-1].code == "2C"
+    assert partie.attend_tape() is False
 
 
 def test_fenetre_se_clot_des_que_tout_le_monde_a_tape():

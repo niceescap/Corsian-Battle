@@ -125,6 +125,15 @@ class ResolveurTapeReseau(ResolveurTape):
         """Ferme la fenêtre : les `tape` ultérieurs ne sont plus collectés."""
         self._clos = True
 
+    def rouvrir(self) -> None:
+        """Rouvre la collecte après un verdict sans gagnant.
+
+        Un doublon obligatoire n'est pas terminé par la fin de l'alerte
+        visuelle : les `tape` restent donc recevables jusqu'à l'attribution.
+        """
+        self._clos = False
+        self.verdict = None
+
     def reinitialiser(self) -> None:
         """Remet le résolveur à zéro pour le prochain doublon."""
         self.anomalies.clear()

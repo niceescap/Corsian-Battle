@@ -56,6 +56,8 @@ def journaliser_echec_tache(tache):
 
 MAX_COUPS = 200000          # garde-fou du moteur, aligné sur jouer_partie()
 DUREE_MAX_S = 1800          # 30 min : au-delà, partie nulle (PROTOCOLE §13)
+DUREE_MAX_TAP_MS = 60_000.0 # borne de collecte après l'alerte visuelle
+ECART_MAX_TAP_MS = 60_000.0 # inactivité maximale pendant un doublon ouvert
 
 
 class ResolveurAucuneTape(ResolveurTape):
@@ -137,6 +139,10 @@ class PartieEnLigne:
         self._minuteur: Optional[asyncio.Task] = None
         self._resolveur_courant: Optional[ResolveurTapeReseau] = None
         self._fin_fenetre: Optional[asyncio.Event] = None
+        self._doublon_en_attente: bool = False
+        self._resolveur_attente: Optional[ResolveurTapeReseau] = None
+        self._tape_attente: Optional[asyncio.Event] = None
+        self._dernier_tap: Optional[float] = None
         self._tapes_recues: set = set()
         self._delais_recus: Dict[int, float] = {}
 
@@ -179,6 +185,8 @@ class PartieEnLigne:
         )
 
     def attend_tape(self) -> bool:
+        if self._doublon_en_attente:
+            return self._resolveur_attente is not None
         return self._resolveur_courant is not None and self._fin_fenetre is not None
 
     def etat_public(self) -> Dict[str, Any]:
@@ -357,7 +365,9 @@ class PartieEnLigne:
         resolveur = ResolveurTapeReseau(
             plancher_ms=self.cfg.plancher_tape_ms,
             refus_ms=self.cfg.refus_tape_ms,
-            fenetre_ms=self.cfg.fenetre_tape_ms,
+            # L'alerte visuelle dure `fenetre_tape_ms`, mais les taps restent
+            # valables pendant toute l'attente du doublon obligatoire.
+            fenetre_ms=max(float(self.cfg.fenetre_tape_ms), DUREE_MAX_TAP_MS),
         )
         self._resolveur_courant = resolveur
         self._fin_fenetre = asyncio.Event()
@@ -381,9 +391,40 @@ class PartieEnLigne:
             )
         except asyncio.TimeoutError:
             pass
-        resolveur.cloturer()
+
+        # La fenêtre visuelle est terminée, mais le doublon reste obligatoire :
+        # on garde donc les taps reçus ouverts jusqu'à la résolution effective.
+        self._doublon_en_attente = True
+        self._resolveur_attente = resolveur
         self._resolveur_courant = None
         self._fin_fenetre = None
+        resolveur.rouvrir()
+        self._tape_attente = asyncio.Event()
+        if resolveur.nb_retenu():
+            self._tape_attente.set()
+        else:
+            self._dernier_tap = time.monotonic()
+
+        # `_fenetre_doublon` ne rend la main au coup moteur qu'à
+        # l'attribution effective : aucune pose ni avance n'est possible
+        # pendant cette attente.
+        while not self.termine and self._tape_attente is not None:
+            reste = None
+            if self._dernier_tap is not None:
+                reste = (
+                    self._dernier_tap + ECART_MAX_TAP_MS / 1000.0 - time.monotonic()
+                )
+                if reste <= 0:
+                    break
+            try:
+                await asyncio.wait_for(self._tape_attente.wait(), timeout=reste)
+                break
+            except asyncio.TimeoutError:
+                break
+        self._doublon_en_attente = False
+        self._resolveur_attente = None
+        self._tape_attente = None
+        self._dernier_tap = None
         return resolveur
 
     def recevoir_tape(self, numero_siege: int, delai_ms: Any) -> Tuple[bool, Optional[str]]:
@@ -393,8 +434,16 @@ class PartieEnLigne:
         concerné : lui révéler qu'un délai est refusé serait un oracle sur le
         plancher physiologique. Il est seulement journalisé et consigné.
         """
-        resolveur = self._resolveur_courant
-        if resolveur is None or self._fin_fenetre is None or self.jeu is None:
+        resolveur = (
+            self._resolveur_attente
+            if self._doublon_en_attente
+            else self._resolveur_courant
+        )
+        if (
+            resolveur is None
+            or (not self._doublon_en_attente and self._fin_fenetre is None)
+            or self.jeu is None
+        ):
             return False, "aucune_fenetre"
         index = self.par_siege.get(numero_siege)
         if index is None:
@@ -408,8 +457,12 @@ class PartieEnLigne:
         if valeur == valeur:                       # ni NaN
             self._delais_recus[numero_siege] = valeur
         accepte, motif = resolveur.enregistrer(nom, delai_ms)
-        if self._toutes_recues():
+        if self._doublon_en_attente:
+            self._dernier_tap = time.monotonic()
+        if self._fin_fenetre is not None and self._toutes_recues():
             self._fin_fenetre.set()                # tout le monde a répondu : clôture tôt
+        if accepte and self._tape_attente is not None:
+            self._tape_attente.set()
         return accepte, motif
 
     def _toutes_recues(self) -> bool:
@@ -479,6 +532,8 @@ class PartieEnLigne:
         Le client ne désigne jamais une carte — c'est le serveur qui la connaît.
         """
         if self.termine or self.jeu is None:
+            return False
+        if self._doublon_en_attente:
             return False
         index = self.par_siege.get(numero_siege)
         if index is None:
@@ -566,6 +621,8 @@ class PartieEnLigne:
                 await self.finir("partie_nulle")
             elif time.time() - self.lance_le > DUREE_MAX_S:
                 await self.finir("expiration")
+            elif self._doublon_en_attente:
+                pass
             else:
                 self._lancer_minuteur()
             return coup
@@ -627,6 +684,8 @@ class PartieEnLigne:
         self._annuler_minuteur()
         if self._fin_fenetre is not None:
             self._fin_fenetre.set()
+        if self._tape_attente is not None:
+            self._tape_attente.set()
 
     # ------------------------------------------------------------------ #
     # Fin
