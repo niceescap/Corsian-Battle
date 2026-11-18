@@ -408,7 +408,9 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
     if (taille == Size.zero) return;
 
     final vitesse = venantDeMoi ? 1200.0 : 900 + _rng.nextDouble() * 1400;
-    final arrivee = _positionDepot(taille, siege);
+    // Départ : ancre du joueur. Arrivée : zone COMMUNE au centre du tapis,
+    // indépendante du siège, comme avant le template adaptatif.
+    final arrivee = _positionArrivee(taille);
     final depart = _origineJoueur(siege, taille);
     final rotationFinale = (_rng.nextDouble() - 0.5) * 0.6;
 
@@ -514,19 +516,12 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
       return;
     }
 
-    final sieges = _numerosJoueurs();
-    final siegeDuPli = _monSiege >= 0 ? _monSiege : null;
     _centreVisible.addAll([
         for (var i = 0; i < cartes.length; i++)
           _CarteCentre(
             code: cartes[i],
-            position: _positionDepot(
-              taille,
-              sieges.isEmpty
-                  ? siegeDuPli
-                  : sieges[(i + 1) % sieges.length],
-            ),
-            rotation: (_rng.nextDouble() - 0.5) * 0.3,
+            position: _positionArrivee(taille),
+            rotation: (_rng.nextDouble() - 0.5) * 0.6,
           ),
       ]);
     if (mounted) setState(() {});
@@ -638,33 +633,18 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
     return Offset(z.width / 2, z.height - 40);
   }
 
-  /// Zone de dépôt d'un siège : ancre du vol et de la carte posée.
+  /// Zone d'atterrissage commune à tous les joueurs.
   ///
-  /// Les cartes volent du tas du joueur vers une zone proche du centre,
-  /// orientée vers le tapis, ce qui garde le pli lisible sans jamais
-  /// prévisualiser la carte à venir.
-  Offset _positionDepot(Size z, int? siege) {
+  /// Toutes les cartes jouées convergent vers le centre du tapis, avec de
+  /// petites variations aléatoires (position et rotation) dans un repère
+  /// commun : le siège du joueur n'intervient pas. La destination est ainsi
+  /// indépendante du nombre de joueurs et du gabarit du tapis, tout en
+  /// produisant une superposition cyclique naturelle d'une carte à l'autre.
+  Offset _positionArrivee(Size z) {
     final centre = _rectTapis(z).center;
-    if (siege == null) {
-      return Offset(
-        centre.dx + (_rng.nextDouble() - 0.5) * 70,
-        centre.dy + (_rng.nextDouble() - 0.5) * 44,
-      );
-    }
-
-    final geometrie = _construireGeometrie(z);
-    final siegeGeometrie = geometrie?.siegeParIdentifiant(siege);
-    final zone = siegeGeometrie?.zoneDepot;
-    if (zone == null) {
-      return Offset(
-        centre.dx + (_rng.nextDouble() - 0.5) * 70,
-        centre.dy + (_rng.nextDouble() - 0.5) * 44,
-      );
-    }
-
     return Offset(
-      zone.center.x + (_rng.nextDouble() - 0.5) * zone.size.width * 0.35,
-      zone.center.y + (_rng.nextDouble() - 0.5) * zone.size.height * 0.2,
+      centre.dx + (_rng.nextDouble() - 0.5) * 70,
+      centre.dy + (_rng.nextDouble() - 0.5) * 44,
     );
   }
 
