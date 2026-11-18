@@ -111,11 +111,86 @@ def url_ws(base_jeu: str) -> str:
     return base_jeu.rstrip("/") + "/ws"
 
 
+class SynchronisationAttente:
+    """Attend N sièges présents avant d'autoriser le premier `pret`.
+
+    À 3 joueurs, le premier `table_etat` arrive souvent avant la troisième
+    socket : sans barrière, les premiers clients se déclarent prêts trop tôt.
+    Les tables à 2 et 4 joueurs gardent le comportement historique.
+    """
+
+    DELAI_S = 30.0
+
+    def __init__(self, attendus: int) -> None:
+        self.attendus = attendus
+        self.presents = 0
+        self._atteinte = asyncio.Event()
+        self._abandon = False
+        self._sockets: List[Any] = []
+        self._message_affiche = False
+
+    def observer(self, sieges: Any) -> int:
+        """Met à jour la présence depuis un `table_etat` et arme la barrière."""
+        if not isinstance(sieges, list):
+            return self.presents
+        self.presents = sum(
+            1
+            for siege in sieges
+            if isinstance(siege, dict) and siege.get("present") is True
+        )
+        if self.presents >= self.attendus:
+            self._atteinte.set()
+        return self.presents
+
+    @property
+    def prete(self) -> bool:
+        return self._atteinte.is_set()
+
+    @property
+    def abandonnee(self) -> bool:
+        return self._abandon
+
+    async def enregistrer_socket(self, socket: Any) -> bool:
+        if self._abandon:
+            try:
+                await socket.close()
+            except Exception:
+                pass
+            return False
+        self._sockets.append(socket)
+        return True
+
+    async def surveiller(self) -> None:
+        """Au-delà de 30 s, affiche l'état puis ferme toutes les sockets."""
+        try:
+            await asyncio.wait_for(self._atteinte.wait(), timeout=self.DELAI_S)
+            return
+        except asyncio.TimeoutError:
+            pass
+        if self._atteinte.is_set():
+            return
+        self._abandon = True
+        if not self._message_affiche:
+            self._message_affiche = True
+            print(f"{self.attendus} joueurs attendus, {self.presents} présents", flush=True)
+        for socket in list(self._sockets):
+            try:
+                await socket.close()
+            except Exception:
+                pass
+
+
 # ---------------------------------------------------------------------------
 # Un joueur
 # ---------------------------------------------------------------------------
 class Joueur:
-    def __init__(self, compte: Dict[str, Any], verbeux: bool, rapide: bool = False) -> None:
+    def __init__(
+        self,
+        compte: Dict[str, Any],
+        verbeux: bool,
+        rapide: bool = False,
+        synchronisation: Optional[SynchronisationAttente] = None,
+    ) -> None:
         self.compte = compte
         self.pseudo = compte.get("pseudo", "?")
         self.jeton = compte.get("jeton_acces", "")
@@ -134,6 +209,7 @@ class Joueur:
         self.dernier_seq = 0
         self.verbeux = verbeux
         self.rapide = rapide
+        self.synchronisation = synchronisation
 
     def log(self, texte: str) -> None:
         if self.verbeux:
@@ -208,6 +284,9 @@ class Joueur:
 
     async def session(self, ws_url: str, code: str) -> Optional[Dict[str, Any]]:
         async with websockets.connect(ws_url, max_size=2**20) as socket:
+            if self.synchronisation is not None:
+                if not await self.synchronisation.enregistrer_socket(socket):
+                    return None
             tache_ping = asyncio.create_task(self._ping_periodique(socket))
             await socket.send(
                 json.dumps(
@@ -228,6 +307,8 @@ class Joueur:
                     except websockets.exceptions.ConnectionClosed as fermeture:
                         self.log(f"socket fermé ({fermeture.code})")
                         return None
+                    if self.synchronisation is not None and self.synchronisation.abandonnee:
+                        return None
                     message = json.loads(brut)
                     type_ = message.get("type")
                     donnees = message.get("d") or {}
@@ -240,7 +321,17 @@ class Joueur:
                         self.log(f"connecté siège {self.siege} · table {donnees.get('table')}")
 
                     elif type_ == "table_etat":
-                        if donnees.get("etat") == "attente" and not self.pret:
+                        if self.synchronisation is not None:
+                            self.synchronisation.observer(donnees.get("sieges"))
+                            peut_pret = (
+                                self.synchronisation.prete
+                                and self.synchronisation.presents
+                                >= self.synchronisation.attendus
+                                and not self.synchronisation.abandonnee
+                            )
+                        else:
+                            peut_pret = True
+                        if donnees.get("etat") == "attente" and peut_pret and not self.pret:
                             self.pret = True
                             await socket.send(json.dumps({"type": "pret"}))
                             self.log("prêt")
@@ -289,6 +380,9 @@ class Joueur:
 # ---------------------------------------------------------------------------
 async def une_partie(args: argparse.Namespace, numero: int) -> Dict[str, Any]:
     type_partie = "duel" if args.joueurs == 2 else "table_quatre"
+    synchronisation = (
+        SynchronisationAttente(args.joueurs) if args.joueurs > 2 else None
+    )
     comptes = [
         creer_compte(args.auth, i, args.sans_auth, args.reutiliser_comptes)
         for i in range(args.joueurs)
@@ -306,12 +400,28 @@ async def une_partie(args: argparse.Namespace, numero: int) -> Dict[str, Any]:
         f"{' · rapide' if args.rapide else ''}",
         flush=True,
     )
-    joueurs = [Joueur(compte, args.verbeux, args.rapide) for compte in comptes]
+    joueurs = [
+        Joueur(compte, args.verbeux, args.rapide, synchronisation)
+        for compte in comptes
+    ]
     debut = time.time()
-    resultats = await asyncio.gather(
-        *[joueur.session(url_ws(args.jeu), code) for joueur in joueurs],
-        return_exceptions=True,
+    veille = (
+        asyncio.create_task(synchronisation.surveiller())
+        if synchronisation is not None
+        else None
     )
+    try:
+        resultats = await asyncio.gather(
+            *[joueur.session(url_ws(args.jeu), code) for joueur in joueurs],
+            return_exceptions=True,
+        )
+    finally:
+        if veille is not None:
+            veille.cancel()
+            try:
+                await veille
+            except asyncio.CancelledError:
+                pass
     duree = time.time() - debut
 
     fin = next((r for r in resultats if isinstance(r, dict)), None)
@@ -369,7 +479,7 @@ def lire_arguments() -> argparse.Namespace:
                            help="base de corsian-auth (défaut : http://127.0.0.1:8111)")
     analyseur.add_argument("--jeu", default="http://127.0.0.1:8112",
                            help="base de corsian-jeu (défaut : http://127.0.0.1:8112)")
-    analyseur.add_argument("--joueurs", type=int, default=2, choices=(2, 4))
+    analyseur.add_argument("--joueurs", type=int, default=2, choices=(2, 3, 4))
     analyseur.add_argument("--parties", type=int, default=1)
     analyseur.add_argument("--verbeux", action="store_true", help="imprime chaque message")
     analyseur.add_argument("--sans-auth", action="store_true",
