@@ -273,9 +273,14 @@ class PartieEnLigne:
     # Lancement
     # ------------------------------------------------------------------ #
     async def lancer(self) -> None:
-        numeros = self._sieges_occupes()
+        # Le roster est figé sur les joueurs RÉELLEMENT connectés au moment du
+        # lancement : un siège réservé par REST mais sans socket ne doit ni
+        # recevoir de cartes ni apparaître dans la partie.
+        numeros = [s.numero for s in self.table.sieges_connectes()]
         if len(numeros) < 2:
-            raise ValueError("Il faut au moins deux joueurs pour lancer une partie.")
+            raise ValueError("pas_assez_joueurs : il faut au moins deux joueurs connectés.")
+        if len(numeros) > 4:
+            raise ValueError("trop_de_joueurs : quatre joueurs au maximum.")
         self.par_index = numeros
         self.par_siege = {numero: i for i, numero in enumerate(numeros)}
         noms = [self._siege(n).pseudo or f"Joueur{n}" for n in numeros]

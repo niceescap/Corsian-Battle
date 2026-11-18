@@ -71,6 +71,7 @@ async def _attendre_apres_alerte(partie: PartieEnLigne) -> None:
 def _table(connectee: bool = True) -> Table:
     gestionnaire = GestionnaireTables()
     table, _ = gestionnaire.creer("duel", "j1", "Nina")
+    table.siege(0).present = True
     siege = table.siege(1)
     siege.joueur_id = "j2"
     siege.pseudo = "Marc"
@@ -115,7 +116,7 @@ def _imposer(
 # ---------------------------------------------------------------------------
 def test_prediction_du_doublon():
     async def scenario():
-        table = _table(connectee=False)
+        table = _table()
         partie = PartieEnLigne(table, Collecteur(), _config(), seed=1)
         await partie.lancer()
         avant = partie._doublon_previsible()          # tas mélangés : en général None
@@ -403,7 +404,7 @@ def test_delai_impossible_rejete_et_consigne():
 
 def test_tape_hors_fenetre_ignorer():
     async def scenario():
-        table = _table(connectee=False)
+        table = _table()
         publie = Collecteur()
         partie = PartieEnLigne(table, publie, _config(), seed=1)
         await partie.lancer()
@@ -425,7 +426,7 @@ def test_doublon_non_tape_et_defi_manque_sur_le_meme_coup():
     """
 
     async def scenario():
-        table = _table(connectee=False)
+        table = _table()
         publie = Collecteur()
         partie = PartieEnLigne(table, publie, _config(), seed=1)
         partie.fenetre_active = False                 # personne ne peut taper

@@ -79,6 +79,7 @@ def _table_deux_joueurs() -> Table:
     siege.pret = True
     for un_siege in table.sieges:
         un_siege.websocket = SOCKET
+        un_siege.present = True
         # Les DEUX joueurs sont prêts : c'est la condition de lancement.
         un_siege.pret = True
     return table

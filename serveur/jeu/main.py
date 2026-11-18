@@ -448,7 +448,11 @@ async def _lancer_partie(table: Table) -> None:
     await asyncio.sleep(cfg.compte_a_rebours_s)
     if table.partie is not None:
         return                                    # lancée entre-temps
-    if not table.tous_prets():
+    # Le roster est revérifié juste avant la création : seuls les sièges
+    # réellement connectés comptent, et ils doivent tous être prêts. Un siège
+    # simplement réservé ne doit pas provoquer une distribution à son profit.
+    connectes = table.sieges_connectes()
+    if len(connectes) < 2 or not all(s.pret for s in connectes):
         table.etat = "attente"                    # un joueur est parti : on attend
         await _diffuser(
             table,

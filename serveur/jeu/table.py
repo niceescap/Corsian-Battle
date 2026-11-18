@@ -129,6 +129,24 @@ class Table:
     def nb_humains(self) -> int:
         return sum(1 for s in self.sieges if s.occupe() and not s.est_bot)
 
+    def sieges_connectes(self) -> List[Siege]:
+        """Sièges humains réellement connectés, dans l'ordre des sièges.
+
+        Un siège réservé par REST mais dont la socket n'est pas encore ouverte
+        n'est pas connecté : il ne doit pas entrer dans la distribution.
+        """
+        return sorted(
+            (
+                s
+                for s in self.sieges
+                if s.joueur_id is not None
+                and s.present
+                and s.websocket is not None
+                and not s.est_bot
+            ),
+            key=lambda s: s.numero,
+        )
+
     def tous_prets(self) -> bool:
         return self.nb_humains() >= 2 and all(
             s.pret for s in self.sieges if s.occupe() and not s.est_bot

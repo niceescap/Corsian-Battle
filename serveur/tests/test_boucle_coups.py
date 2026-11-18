@@ -32,6 +32,7 @@ from serveur.jeu.partie import PartieEnLigne  # noqa: E402
 from serveur.jeu.table import GestionnaireTables, Table  # noqa: E402
 
 _RANG = {code: rang for rang, code in CODES_RANG.items()}
+SOCKET = object()          # marqueur « siège réellement connecté »
 
 
 def _carte(code: str) -> Carte:
@@ -112,6 +113,7 @@ def _table(type_partie: str = "duel", occupes=((0, "j1", "Nina"), (1, "j2", "Mar
         siege.joueur_id = joueur_id
         siege.pseudo = pseudo
         siege.present = True
+        siege.websocket = SOCKET
     return table
 
 
