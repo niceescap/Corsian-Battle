@@ -297,7 +297,6 @@ class AdaptiveTableGeometry {
   static const double hauteurCarteReference = 112.5;
 
   static const double _margeHorizontaleTapis = 0.03;
-  static const double _ratioHauteurCarte = 0.66;
 
   final TableSurface surface;
   final List<int> siegesOccupes;
@@ -456,8 +455,8 @@ class AdaptiveTableGeometry {
     return TableRect(
       left: (surface.width - cote) / 2,
       top: margeSuperieure,
-      width: cote,
-      height: cote,
+      width: cote.toDouble(),
+      height: cote.toDouble(),
     );
   }
 
@@ -470,7 +469,7 @@ class AdaptiveTableGeometry {
     // (constante du rendu du pli) tienne toujours dans une zone de dépôt.
     final largeur = (math.min(largeurBrute, largeurMaximale))
         .clamp(68.0, 120.0);
-    final ratio = hauteurCarteReference / largeurCarteReference;
+    const ratio = hauteurCarteReference / largeurCarteReference;
     return TableSize(width: largeur, height: largeur * ratio);
   }
 
@@ -656,10 +655,9 @@ class AdaptiveTableGeometry {
     final profondeurArc = hauteurBande;
 
     return TablePoint(
-      (centre.x + cosinus * demiLargeurArc).clamp(
-        margeHorizontale,
-        surface.width - margeHorizontale,
-      ),
+      (centre.x + cosinus * demiLargeurArc)
+          .clamp(margeHorizontale, surface.width - margeHorizontale)
+          .toDouble(),
       hauteurBande + (1 + sinus) * profondeurArc,
     );
   }

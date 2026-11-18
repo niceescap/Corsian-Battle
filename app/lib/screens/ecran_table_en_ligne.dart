@@ -670,14 +670,12 @@ class _EcranTableEnLigneState extends State<EcranTableEnLigne>
 
   List<int> _numerosJoueurs() {
     final sieges = _etat?.sieges ?? const <SiegeInfo>[];
-    // Un siège participe s'il est occupé : joueur connecté (`present`),
-    // bot de remplacement, ou joueur déconnecté en cours de partie (le
-    // serveur continue de jouer ses coups au fil du délai de tour, donc son
-    // tas reste actif). Les sièges vides d'une table à 4 arrivent avec un
-    // pseudo replié sur « Joueur » et aucun de ces marqueurs.
+    // Un siège participe s'il est occupé : joueur connecté (`present`) ou bot
+    // de remplacement. Les sièges vides d'une table à 4 arrivent avec un
+    // pseudo replié sur « Joueur » et aucun de ces marqueurs, donc ils ne
+    // s'ajoutent jamais à la géométrie.
     final occupes = sieges
-        .where((siege) =>
-            siege.present || siege.estBot || siege.nbCartes != null)
+        .where((siege) => siege.present || siege.estBot)
         .map((siege) => siege.numero)
         .toSet()
         .toList();
