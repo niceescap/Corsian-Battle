@@ -150,7 +150,7 @@ class _EcranAccueilState extends State<EcranAccueil> {
       if (jeton == null) return;
       final table = await _rest.creerTable(
         jeton: jeton,
-        type: _mode == ModePartie.duel ? 'duel' : 'table_quatre',
+        type: 'table_quatre',
       );
       tracer('Table créée : ${table.code}');
       await _ouvrirTable(table.code, urlPartage: table.urlPartage);

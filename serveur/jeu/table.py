@@ -213,6 +213,7 @@ class Table:
             "etat": self.etat,
             "type": self.type_partie,
             "sieges": sieges,
+            "capacite": self.taille,
             "mon_siege": mon_siege,
             "createur_siege": self.createur_siege,
             "pli": [],
@@ -333,7 +334,8 @@ class GestionnaireTables:
         siege = table.siege_libre()
         if siege is None:
             raise ErreurTable(
-                "table_pleine", "La table est complète.", statut=409, fermeture_ws=4409
+                "table_complete" if table.type_partie == "table_quatre" else "table_pleine",
+                "La table est complète.", statut=409, fermeture_ws=4409
             )
         siege.joueur_id = joueur_id
         siege.pseudo = pseudo

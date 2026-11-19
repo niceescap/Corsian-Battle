@@ -301,7 +301,7 @@ async def _fermer(websocket: WebSocket, code: int) -> None:
 # Modèles
 # ---------------------------------------------------------------------------
 class TableRequete(BaseModel):
-    type: str = Field(default="duel", pattern="^(duel|table_quatre)$")
+    type: str = Field(default="table_quatre", pattern="^(duel|table_quatre)$")
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +383,9 @@ def creer_table(
             table, siege = existante, existante.sieges[0]
             return JSONResponse(_reponse_table(table, siege), status_code=200)
 
-    table, siege = tables.creer(corps.type, joueur_id, pseudo)
+    # Les anciennes APK peuvent encore demander un duel : toutes les tables
+    # créées en ligne ont désormais quatre sièges.
+    table, siege = tables.creer("table_quatre", joueur_id, pseudo)
     journal.info("Table %s créée (%s) par %s", table.code, table.type_partie, pseudo)
     return JSONResponse(_reponse_table(table, siege), status_code=201)
 
@@ -393,6 +395,7 @@ def _reponse_table(table: Table, siege: Siege) -> Dict[str, Any]:
         "code": table.code,
         "type": table.type_partie,
         "siege": siege.numero,
+        "capacite": table.taille,
         "etat": table.etat,
         "url_partage": table.url_partage,
         "ws": f"{cfg.prefixe_public}/ws",
@@ -677,7 +680,7 @@ async def websocket_jeu(websocket: WebSocket) -> None:
             "type": "bienvenue",
             "seq": 0,
             "d": {"table": table.code, "siege": siege.numero, "seq_courant": table.seq,
-                  "createur_siege": table.createur_siege},
+                  "createur_siege": table.createur_siege, "capacite": table.taille},
         },
     )
     await _instantane_par_siege(table, table.prochain_seq())

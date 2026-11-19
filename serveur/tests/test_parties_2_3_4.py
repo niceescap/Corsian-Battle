@@ -11,9 +11,11 @@ cartes sur une partie à 3 joueurs.
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 from unittest.mock import patch
 
@@ -24,7 +26,7 @@ from serveur.commun.config import config_jeu  # noqa: E402
 from serveur.jeu import evenements  # noqa: E402
 from serveur.jeu.partie import PartieEnLigne  # noqa: E402
 from serveur.jeu.resolveur_reseau import ResolveurTapeReseau  # noqa: E402
-from serveur.jeu.table import GestionnaireTables, Table  # noqa: E402
+from serveur.jeu.table import ErreurTable, GestionnaireTables, Table  # noqa: E402
 
 SOCKET = object()          # marqueur « siège réellement connecté »
 
@@ -113,13 +115,63 @@ def _tailles(partie: PartieEnLigne) -> List[int]:
     return [joueur.nombre_cartes() for joueur in partie.jeu.joueurs]
 
 
+def test_creation_rest_quatre_sieges_pour_chaque_type():
+    from serveur.jeu import main as jeu_main
+
+    requete = SimpleNamespace(headers={}, client=SimpleNamespace(host="test"))
+    for type_demande in (None, "duel", "table_quatre"):
+        gestionnaire = GestionnaireTables()
+        corps = jeu_main.TableRequete() if type_demande is None else jeu_main.TableRequete(type=type_demande)
+        with patch.object(jeu_main, "tables", gestionnaire), \
+             patch.object(jeu_main, "_authentifie", return_value={"sub": "j1", "pseudo": "Nina"}), \
+             patch.object(jeu_main._limiteur_rest, "autorise", return_value=(True, 0)):
+            reponse = jeu_main.creer_table(requete, corps, credits=None)
+        donnees = json.loads(reponse.body)
+        table = gestionnaire.obtenir(donnees["code"])
+        assert reponse.status_code == 201
+        assert donnees["type"] == "table_quatre" and donnees["capacite"] == 4
+        assert table.type_partie == "table_quatre" and len(table.sieges) == 4
+        assert table.instantane(0)["capacite"] == 4
+        assert len(table.instantane(0)["sieges"]) == 4
+
+
+def test_quatrieme_accepte_cinquieme_refuse():
+    from serveur.jeu import main as jeu_main
+
+    gestionnaire = GestionnaireTables()
+    table, createur = gestionnaire.creer("table_quatre", "j1", "Nina")
+    createur.present, createur.websocket = True, object()
+    with patch.object(jeu_main, "tables", gestionnaire):
+        for numero in (1, 2, 3):
+            if numero == 3:
+                assert len(table.sieges_connectes()) == 3
+            identite = {"sub": f"j{numero + 1}", "pseudo": f"Joueur{numero + 1}"}
+            with patch.object(jeu_main, "_authentifie", return_value=identite):
+                reponse = jeu_main.rejoindre_table(table.code, credits=None)
+            assert reponse.status_code == 200
+            assert json.loads(reponse.body)["siege"] == numero
+            siege = table.siege(numero)
+            siege.present, siege.websocket = True, object()
+        assert len(table.sieges_connectes()) == 4
+        with patch.object(jeu_main, "_authentifie", return_value={"sub": "j5", "pseudo": "Joueur5"}):
+            try:
+                jeu_main.rejoindre_table(table.code, credits=None)
+            except ErreurTable as erreur:
+                assert erreur.code == "table_complete" and erreur.statut == 409
+                reponse = asyncio.run(jeu_main._gerer_erreur_table(None, erreur))
+                assert json.loads(reponse.body)["erreur"]["code"] == "table_complete"
+            else:
+                raise AssertionError("un cinquième joueur aurait dû être refusé")
+
+
 # ---------------------------------------------------------------------------
 # a. Distribution à 2
 # ---------------------------------------------------------------------------
 def test_distribution_a_deux():
-    table = _table("duel", [(0, "j1", "Nina"), (1, "j2", "Marc")])
+    table = _table("table_quatre", [(0, "j1", "Nina"), (1, "j2", "Marc")])
     partie, publie = _lancer(table)
     try:
+        assert len(table.sieges) == 4 and partie.par_index == [0, 1]
         assert _tailles(partie) == [26, 26]
         assert len(partie.jeu.cartes_reste_neutres) == 0
         lancement = publie.du_type("partie_lancee")[0]["d"]
@@ -336,6 +388,8 @@ def _executer(nom: str, fonction) -> bool:
 
 if __name__ == "__main__":
     cas = [
+        ("création REST à quatre sièges", test_creation_rest_quatre_sieges_pour_chaque_type),
+        ("quatrième accepté, cinquième refusé", test_quatrieme_accepte_cinquieme_refuse),
         ("distribution 2 -> 26/26", test_distribution_a_deux),
         ("distribution 3 -> 17/17/17 + 1", test_distribution_a_trois),
         ("distribution 4 -> 13/13/13/13", test_distribution_a_quatre),

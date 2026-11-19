@@ -248,7 +248,7 @@ class _EcranSalleState extends State<EcranSalle> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '$occupes / ${sieges.isEmpty ? 2 : sieges.length}',
+                      sieges.isEmpty ? '— / —' : '$occupes / ${sieges.length}',
                       style: const TextStyle(
                         color: Colors.white38,
                         fontSize: 13,

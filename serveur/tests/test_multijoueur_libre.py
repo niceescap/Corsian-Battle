@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -204,7 +205,7 @@ def test_bienvenue_porte_le_siege_du_createur():
 
     async def scenario():
         gestionnaire = GestionnaireTables()
-        table, _ = gestionnaire.creer("duel", "j1", "Nina")
+        table, _ = gestionnaire.creer("table_quatre", "j1", "Nina")
 
         class SocketFictive:
             def __init__(self):
@@ -230,8 +231,10 @@ def test_bienvenue_porte_le_siege_du_createur():
         bienvenue = next(m for m in socket.messages if m["type"] == "bienvenue")
         assert bienvenue["d"]["siege"] == 0
         assert bienvenue["d"]["createur_siege"] == 0
+        assert bienvenue["d"]["capacite"] == 4
         assert "createur_id" not in bienvenue["d"]
         assert any(m["type"] == "table_etat" and m["d"]["createur_siege"] == 0
+                   and m["d"]["capacite"] == 4 and len(m["d"]["sieges"]) == 4
                    for m in socket.messages)
     asyncio.run(scenario())
 
@@ -446,6 +449,9 @@ if __name__ == "__main__":
         ("l'instantané porte le tour et le pli",
          test_l_instantane_porte_le_tour_et_le_pli),
     ]
+    if os.environ.get("CORSIAN_TEST_SANS_HEADLESS") == "1":
+        cas = [(nom, fn) for nom, fn in cas if fn is not test_headless_barriere_et_createur_2_3_4_sans_reseau]
+        print("NON EXÉCUTÉ : test headless (CORSIAN_TEST_SANS_HEADLESS=1)")
     reussis = sum(_executer(nom, fn) for nom, fn in cas)
     echecs = len(cas) - reussis
     print(f"\n{reussis} succès, {echecs} échec(s).")

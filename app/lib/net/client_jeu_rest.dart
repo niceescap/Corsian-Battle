@@ -100,7 +100,7 @@ class ClientJeuRest {
   }
 
   /// Crée une table et réserve le siège du créateur.
-  Future<TableInfo> creerTable({required String jeton, String type = 'duel'}) async {
+  Future<TableInfo> creerTable({required String jeton, String type = 'table_quatre'}) async {
     final json = await _envoyer(
       _config.urlJeu('/tables'),
       jsonEncode({'type': type}),
